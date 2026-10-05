@@ -1,0 +1,32 @@
+name: mp-mcp-test
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: test-root-password
+      MYSQL_DATABASE: mcp_test
+      MYSQL_USER: mcp_test
+      MYSQL_PASSWORD: mcp_test_password
+    ports: ["127.0.0.1:13307:3306"]
+    command: ["--log-bin-trust-function-creators=1"]
+    volumes: ["./test/mysql.sql:/docker-entrypoint-initdb.d/01-test.sql:ro"]
+    tmpfs: ["/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ptest-root-password"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mcp_test
+      POSTGRES_USER: mcp_test
+      POSTGRES_PASSWORD: mcp_test_password
+    ports: ["127.0.0.1:15433:5432"]
+    volumes: ["./test/postgres.sql:/docker-entrypoint-initdb.d/01-test.sql:ro"]
+    tmpfs: ["/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcp_test -d mcp_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 60

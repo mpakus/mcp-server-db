@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+project_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+run() {
+  if command -v rtk >/dev/null 2>&1; then
+    rtk proxy "$@"
+  else
+    "$@"
+  fi
+}
+for project in mcp-ex-core mcp-ex-mysql mcp-ex-pg; do
+  (
+    cd "$project_root/$project"
+    run mix format --check-formatted
+    run mix compile --warnings-as-errors
+    run mix test
+    if [ "$project" != mcp-ex-core ]; then
+      run mix escript.build
+    fi
+  )
+done
+if [ "${MCP_INTEGRATION:-false}" = true ]; then
+  run node "$project_root/test/client.mjs"
+fi

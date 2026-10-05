@@ -1,0 +1,5 @@
+/_build/
+/deps/
+/mcp-ex-pg
+/.env
+/erl_crash.dump

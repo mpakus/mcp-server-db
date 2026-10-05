@@ -1,0 +1,5 @@
+/_build/
+/deps/
+/mcp-ex-mysql
+/.env
+/erl_crash.dump
