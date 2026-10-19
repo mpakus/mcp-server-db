@@ -14,8 +14,14 @@ defmodule McpEx.Policy do
         _ -> []
       end)
 
-    if Enum.any?(words, &(&1 in ~w(OUTFILE DUMPFILE LOAD_FILE))),
-      do: raise(ArgumentError, "File access SQL is disabled")
+    if Enum.any?(tokens, fn
+         {kind, value} when kind in [:word, :identifier] ->
+           String.upcase(value) in ~w(OUTFILE DUMPFILE LOAD_FILE)
+
+         _ ->
+           false
+       end),
+       do: raise(ArgumentError, "File access SQL is disabled")
 
     {mode, operations, schema} = classify(tokens, words, config)
 
@@ -241,6 +247,10 @@ defmodule McpEx.Policy do
 
   defp target([first, {:symbol, "."}, second | rest], config) do
     identifier!(second, config.dialect)
+
+    if match?([{:symbol, "."} | _], rest),
+      do: raise(ArgumentError, "Write targets must use table or schema.table")
+
     {identifier!(first, config.dialect), rest}
   end
 

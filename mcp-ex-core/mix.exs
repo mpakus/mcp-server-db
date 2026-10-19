@@ -8,6 +8,6 @@ defmodule McpEx.Core.MixProject do
   def application, do: [extra_applications: [:logger, :ssl]]
 
   defp deps do
-    [{:jason, "~> 1.4"}, {:bandit, "~> 1.6"}, {:plug, "~> 1.16"}, {:decimal, "~> 3.1.1"}]
+    [{:jason, "~> 1.4"}, {:bandit, "~> 1.13.1"}, {:plug, "~> 1.16"}, {:decimal, "~> 3.1.2"}]
   end
 end

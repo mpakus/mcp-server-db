@@ -18,6 +18,11 @@ For each operation required by a statement, the policy:
 5. Applies SQL-shape and PII guards, then executes under the database account's
    native grants.
 
+Write targets support `table` or `schema.table` only. Three-part names such as
+`current_database.schema.table` are rejected before execution, including quoted
+forms, so an extra component cannot shift schema permission checks. PostgreSQL's
+connected database is already selected through `PG_DB`.
+
 Schema overrides can enable a particular schema while the global flag stays
 false. For example, allow inserts and updates only in a MySQL development
 database:
@@ -124,10 +129,12 @@ not setup commands to run against an application database. Bound values avoid
 SQL string construction. Identifier names cannot be bound as parameters.
 
 The policy rejects multiple statements, allowing only an optional final
-semicolon. It also rejects file SQL (`OUTFILE`, `DUMPFILE`, `LOAD_FILE`), session
-or transaction commands, stored-program DDL, grants and unsupported statement
-types such as `REPLACE`, `MERGE` or `CALL`. Complex writes and cross-object DDL
-are refused, including references/foreign keys, rename/exchange, attach/detach,
+semicolon. It also rejects file SQL (`OUTFILE`, `DUMPFILE`, `LOAD_FILE`), including
+quoted/mixed-case identifiers such as MySQL's backtick-quoted `LOAD_FILE`. These
+names inside ordinary string values do not trigger that guard. Session or
+transaction commands, stored-program DDL, grants and unsupported statement types
+such as `REPLACE`, `MERGE` or `CALL` are also rejected. Complex writes and
+cross-object DDL are refused, including references/foreign keys, rename/exchange, attach/detach,
 inheritance and CASCADE. There is no bypass flag for these SQL restrictions.
 
 Quoted strings use doubled quotes rather than backslash escapes. MySQL uses

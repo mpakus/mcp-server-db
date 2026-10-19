@@ -34,8 +34,8 @@ From the workspace root:
 
 Ensure `MCP_INTEGRATION` is unset or `false` for the default check. Both adapters'
 test helpers exclude tests tagged `:integration` unless that variable is exactly
-`true`. The current suite contains 10 core tests, one non-integration MySQL test
-and one non-integration PostgreSQL test: 12 executed tests in total, with two
+`true`. The current suite contains 12 core tests, one non-integration MySQL test
+and one non-integration PostgreSQL test: 14 executed tests in total, with two
 database tests excluded. Counts are a description of this checkout, not a
 substitute for checking the actual output.
 
@@ -67,9 +67,10 @@ the test Compose project even if a check fails:
 
 The database integration tests insert/delete fixture rows, create/drop test
 tables and exercise failure/rollback paths. Use the supplied disposable
-fixtures, never application databases. The current full run executes 10 core,
-2 MySQL and 2 PostgreSQL ExUnit tests (14 total), then the official MCP SDK
-script over both stdio and HTTP. It also rebuilds the escripts before SDK use.
+fixtures, never application databases. The current full run executes 12 core,
+2 MySQL and 2 PostgreSQL ExUnit tests (16 total), then the official MCP SDK
+script over both stdio and HTTP, plus raw escript timeout/framing checks. It also
+rebuilds the escripts before SDK use.
 
 The Compose project is named `mp-mcp-test` and stores database files in tmpfs.
 Removing it discards fixture state. Initial SQL is mounted read-only from
@@ -131,24 +132,45 @@ clients concurrently to check that reused request IDs do not collide. Its child
 environments supply fixture credentials and PII mode rather than inheriting
 application database credentials. The escripts still need `escript` on `PATH`.
 
+The same script also launches each built escript directly with a 500 ms query
+timeout, sends initialization, a two-second slow query and a final ping, then
+closes stdin. It requires JSON-only stdout, a failed-query result, the ping
+response and exit status 0. The MySQL probe additionally requires the real
+driver timeout log on stderr, so a logger-routing regression cannot pass just
+because the query happened to fail silently. This probe disables PII for its
+controlled slow-query function; normal SDK checks keep PII enabled.
+
+For dependency security checks, run from the workspace root:
+
+```sh
+for project in mcp-ex-core mcp-ex-mysql mcp-ex-pg; do
+  (cd "$project" && rtk proxy mix hex.audit)
+done
+```
+
+These checks use the current advisory registry and are separate from the normal
+offline-capable format/compile/test steps.
+
 ## Coverage
 
 | Layer | Checks |
 | --- | --- |
-| Core ExUnit | Configuration validation, permissions, SQL literals/comments/targets, PII guards/masking, numeric encoding, initialization, safe errors, resource URIs and Plug HTTP boundaries |
-| MySQL real database | Binding, metadata aliases, decimal/large-integer/date results, native read-only rejection of a modifying function, committed writes, duplicate-key rollback, schema denials, table DDL and filtered SHOW COLUMNS |
-| PostgreSQL real database | Binding, numeric/large-integer/date precision, read-only rejection of modifying functions/CTEs/EXPLAIN ANALYZE, writes, rollback, schema isolation, table DDL and masked RETURNING |
+| Core ExUnit | Configuration validation, permissions, SQL literals/comments/targets, quoted file-SQL guards, extra write-target qualification, PII guards/masking, numeric encoding, initialization, safe errors, resource URIs and Plug HTTP boundaries |
+| MySQL real database | Binding, metadata aliases, decimal/large-integer/date results, native read-only rejection of a modifying function, quoted file-SQL rejection, committed writes, duplicate-key rollback, schema denials, table DDL and filtered SHOW COLUMNS |
+| PostgreSQL real database | Binding, numeric/large-integer/date precision, read-only rejection of modifying functions/CTEs/EXPLAIN ANALYZE, writes, rollback, schema isolation, denied quoted/unquoted three-part ALTER targets, table DDL and masked RETURNING |
 | Official MCP SDK | Initialize, tools/resources, root/table reads, bound queries, denied writes and sensitive references, stdio and stateless HTTP for both servers |
+| Raw escripts | Actual timeout results, JSON-only stdout, MySQL driver logging on stderr, post-error ping and clean EOF exit |
 | HTTP boundaries | Exact bearer matching, rejected Origin, protocol version, size and media types; SDK concurrent clients |
 
 ## Recorded evidence and limits
 
-The latest recorded full run is 2026-09-30:
-`MCP_INTEGRATION=true ./bin/check` passed all 14 ExUnit tests, both escript
-builds and official SDK stdio/HTTP checks. Detailed evidence is in
-[.worklog/status.md](../.worklog/status.md). Disposable containers and storage
-were removed afterward. This dated result is not a report of a fresh run during
-the 2026-10-05 documentation update.
+The latest recorded full run is 2026-10-19, after the audit fixes:
+`MCP_INTEGRATION=true ./bin/check` passed all 16 ExUnit tests, both escript
+builds, official SDK stdio/HTTP checks and both raw timeout/framing probes.
+Hex audits passed for all three Mix projects with Bandit 1.13.1, Decimal 3.1.2
+and Bandit's required Thousand Island 1.6.0. Detailed evidence and earlier dated
+runs are in [.worklog/status.md](../.worklog/status.md) and
+[the fix log](../.worklog/fixes-2026-10-19.md).
 
 Verification covered the pinned runtime, MySQL 8.4 and PostgreSQL 16. Live
 database TLS/mTLS, Unix sockets, external SSH tunnels, reverse proxies, production

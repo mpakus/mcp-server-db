@@ -92,6 +92,10 @@ isolated tests. `Config.allowed?/3` is the permission lookup;
 `%{mode: mode, schema: schema, introspection: kind}` or raises `ArgumentError`.
 Introspection kinds are `nil`, `:columns`, `:topology` and `:blocked`.
 
+Write target extraction accepts at most two name components; keep third-component
+rejection in that shared path for every write/DDL classifier. File-SQL guards
+inspect words and quoted identifiers while leaving literal values alone.
+
 `McpEx.Server.handle/3` returns `{response_or_nil, next_state}`. Stdio passes
 `:new`, transitions to `:initializing` on initialization, then to `:ready` on
 `notifications/initialized`. HTTP calls the default `:ready` handler separately
@@ -185,9 +189,10 @@ explicit cases and supply live adapter checks before advertising another engine.
 ## Dependencies, versions and compatibility
 
 `mix.exs` declares version ranges; committed lockfiles choose exact packages.
-MySQL uses MyXQL `~> 0.9.0`; PostgreSQL uses Postgrex `~> 0.22.0`. Decimal is
-restricted to `~> 3.1.1`. Avoid adding runtime dependencies when the standard
-library or current modules cover the requirement. Fetch/update dependencies
+MySQL uses MyXQL `~> 0.9.0`; PostgreSQL uses Postgrex `~> 0.22.0`. Bandit is
+restricted to `~> 1.13.1` and Decimal to `~> 3.1.2`, establishing patched minimums.
+Avoid adding runtime dependencies when the standard library or current modules
+cover the requirement. Fetch/update dependencies
 deliberately in the relevant projects and review all affected locks; core
 dependencies can resolve separately in each consumer.
 

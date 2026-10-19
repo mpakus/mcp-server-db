@@ -75,6 +75,29 @@ defmodule McpEx.PgTest do
     refute query(writable, "CREATE TABLE mcp_ddl_check (id INT)")["isError"]
     refute query(writable, "DROP TABLE mcp_ddl_check")["isError"]
 
+    restricted = %{
+      writable
+      | config: %{
+          writable.config
+          | permissions: Map.put(writable.config.permissions, "ddl", %{"locked" => false})
+        }
+    }
+
+    try do
+      for target <- ["locked.users", "mcp_test.locked.users", ~s("mcp_test"."locked"."users")] do
+        result = query(restricted, "ALTER TABLE #{target} ADD COLUMN audit_probe integer")
+        assert result["isError"], "Unexpected DDL success for #{target}"
+        refute hd(result["content"])["text"] =~ "Database operation failed"
+      end
+
+      refute Enum.any?(
+               Server.rows(McpEx.Pg.columns(ctx, "locked", "users")),
+               &(&1["column_name"] == "audit_probe")
+             )
+    after
+      Postgrex.query!(pool, "ALTER TABLE locked.users DROP COLUMN IF EXISTS audit_probe", [])
+    end
+
     assert Enum.any?(
              Server.rows(McpEx.Pg.columns(ctx, "public", "users")),
              &(&1["column_name"] == "email")

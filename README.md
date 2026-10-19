@@ -4,6 +4,11 @@ Connect an MCP client to MySQL or PostgreSQL through SQL tools and table metadat
 resources. Both servers are written in Elixir, run over stdio or authenticated
 stateless HTTP, and disable writes by default.
 
+Status as of 2026-10-19: the three defects from the
+[completion audit](.worklog/audit-2026-10-19.md) are fixed, runtime security
+dependencies are patched, and the full check and Hex audits pass. See the
+[fix log](.worklog/fixes-2026-10-19.md) for regression evidence and verification limits.
+
 | Project | Purpose | Tool | Resource URI |
 | --- | --- | --- | --- |
 | [mcp-ex-mysql](mcp-ex-mysql/README.md) | MySQL server using MyXQL | `mysql_query` | `mysql://tables[/database/table]` |

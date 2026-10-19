@@ -34,6 +34,12 @@ defmodule McpEx.MysqlTest do
     assert payload(query(ctx, "SELECT label FROM users WHERE id=1")) == [%{"label" => "sample"}]
     assert query(ctx, "INSERT INTO users (id,label) VALUES (99,'test')")["isError"]
 
+    for name <- ["LOAD_FILE", "`LOAD_FILE`", "`lOaD_fIlE`"] do
+      result = query(ctx, "SELECT #{name}(?) AS value", ["/var/lib/mysql-files/audit-sentinel"])
+      assert result["isError"]
+      assert hd(result["content"])["text"] == "Error: File access SQL is disabled"
+    end
+
     writable = %{
       ctx
       | config:

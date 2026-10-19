@@ -2,8 +2,12 @@ defmodule McpEx.CLI do
   @moduledoc "Escript lifecycle and newline-delimited stdio transport."
 
   def main(args, adapter) do
-    :logger.update_primary_config(level: :warning)
-    :logger.update_handler_config(:default, :config, %{type: :standard_error})
+    :ok = :logger.update_primary_config(%{level: :warning})
+    {:ok, handler} = :logger.get_handler_config(:default)
+    handler = handler |> Map.drop([:id, :module]) |> put_in([:config, :type], :standard_error)
+    # The standard handler's output type cannot be changed after it starts.
+    :ok = :logger.remove_handler(:default)
+    :ok = :logger.add_handler(:default, :logger_std_h, handler)
     config = McpEx.Config.load(adapter.dialect())
     remote = config.remote or "--http" in args
 

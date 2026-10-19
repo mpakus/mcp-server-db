@@ -51,6 +51,53 @@ defmodule McpEx.CoreTest do
     end
   end
 
+  test "file SQL rejects quoted identifiers while preserving string values" do
+    for name <- ["LOAD_FILE", "load_file", "LoAd_FiLe", "OUTFILE", "DUMPFILE"] do
+      for sql <- ["SELECT #{name}(?)", "SELECT `#{name}`(?)", "SELECT app.`#{name}`(?)"] do
+        assert_raise ArgumentError, "File access SQL is disabled", fn ->
+          Policy.check(sql, config())
+        end
+      end
+
+      assert Policy.check("SELECT '#{name}' AS label", config()).mode == :read
+    end
+
+    assert Policy.check("SELECT 'LOAD_FILE' AS label WHERE ? = ?", config()).mode == :read
+  end
+
+  test "writes reject extra target qualification for both dialects" do
+    operations = Map.new(~w(INSERT UPDATE DELETE DDL), &{"ALLOW_#{&1}_OPERATION", "true"})
+
+    for {dialect, target} <- [
+          {:pg, "mcp_test.locked.users"},
+          {:pg, ~s("mcp_test"."locked"."users")},
+          {:pg, ~s(mcp_test /* comment */ . "locked" . users)},
+          {:mysql, "app.locked.users"},
+          {:mysql, "`app`.`locked`.`users`"}
+        ] do
+      cfg = Config.load(dialect, Map.put(operations, "MYSQL_DB", "app"))
+
+      for sql <- [
+            "ALTER TABLE #{target} ADD COLUMN audit_probe integer",
+            "INSERT INTO #{target} (id) VALUES (1)",
+            "UPDATE #{target} SET id = 1",
+            "DELETE FROM #{target}",
+            "CREATE TABLE #{target} (id integer)",
+            "DROP TABLE #{target}",
+            "TRUNCATE TABLE #{target}"
+          ] do
+        assert_raise ArgumentError, "Write targets must use table or schema.table", fn ->
+          Policy.check(sql, cfg)
+        end
+      end
+
+      assert Policy.check("ALTER TABLE users ADD COLUMN audit_probe integer", cfg).mode == :ddl
+
+      assert Policy.check("ALTER TABLE allowed.users ADD COLUMN audit_probe integer", cfg).schema ==
+               "allowed"
+    end
+  end
+
   test "schema overrides, qualified targets and multi mode" do
     cfg =
       config(%{"ALLOW_INSERT_OPERATION" => "true", "SCHEMA_INSERT_PERMISSIONS" => "locked:false"})

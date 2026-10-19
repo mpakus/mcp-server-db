@@ -96,3 +96,38 @@ security/SQL policy, operations, architecture, development, testing and
 troubleshooting. Local links/anchors and JSON/shell examples passed checks.
 Tasks and exact evidence are tracked in [docs.md](docs.md). The runtime
 verification above remains dated 2026-09-30; application code was unchanged.
+
+## Completion audit — 2026-10-19
+
+The current full check passes: 14 ExUnit tests, both escript builds and official
+SDK stdio/HTTP checks. Documentation links/examples and all 54 configuration
+variables also pass verification.
+
+Release readiness remains open. The audit reproduced a PostgreSQL three-part
+ALTER schema-permission bypass, a failed stderr logger redirect that corrupts
+stdio on MySQL timeout, and quoted MySQL LOAD_FILE bypassing the file-SQL guard
+when native FILE privilege is present. Hex reports one high and two medium
+advisories against the locked Bandit/Decimal versions; patched versions exist.
+Application fixes and dependency upgrades were not applied during this audit.
+
+Reproductions, current updates, passed checks, scope limits and the outstanding
+fix checklist are recorded in [audit-2026-10-19.md](audit-2026-10-19.md).
+
+## Audit fixes — 2026-10-19
+
+All three reproduced defects are fixed. Shared write target parsing rejects a
+third name component; file-SQL checks include quoted/mixed-case identifiers while
+preserving string literals; the logger handler is recreated on stderr with its
+formatter/settings preserved and checked setup, including the corrected primary
+configuration map.
+
+All three Mix projects now lock Bandit 1.13.1, Decimal 3.1.2 and Bandit's required
+Thousand Island 1.6.0. Minimum constraints exclude the affected versions. All
+three Hex audits report no retired or security-advisory packages.
+
+`MCP_INTEGRATION=true ./bin/check` passed 16 tests (12 core, 2 MySQL, 2 PG),
+both escript builds, SDK stdio/HTTP checks with four concurrent HTTP clients,
+and real timeout/JSON-only stdout/stderr/EOF probes for both applications.
+Regressions reproduced the failures before implementation changes. The
+TypeScript reference and root runtime pins were untouched. See
+[fixes-2026-10-19.md](fixes-2026-10-19.md) for exact evidence and scope limits.

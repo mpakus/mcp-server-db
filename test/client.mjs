@@ -37,6 +37,42 @@ async function exercise(client, target) {
   assert.equal(write.isError, true);
 }
 
+async function checkStdioTimeout(target) {
+  const child = spawn(executable(target), ["--stdio"], {
+    env: { ...environment(target), ENABLE_PII_REDACTION: "false", [`${target.app === "mysql" ? "MYSQL" : "PG"}_QUERY_TIMEOUT`]: "500" },
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 10000,
+  });
+  let stdout = "", stderr = "";
+  child.stdout.setEncoding("utf8").on("data", chunk => { stdout += chunk; });
+  child.stderr.setEncoding("utf8").on("data", chunk => { stderr += chunk; });
+  const closed = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  });
+  const messages = [
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "stdio-timeout-test", version: "1" } } },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: target.tool, arguments: { sql: target.app === "mysql" ? "SELECT SLEEP(2) AS value" : "SELECT pg_sleep(2) AS value" } } },
+    { jsonrpc: "2.0", id: 3, method: "ping" },
+  ];
+  try {
+    child.stdin.end(messages.map(message => JSON.stringify(message) + "\n").join(""));
+    const { code, signal } = await closed;
+    assert.equal(signal, null, stderr);
+    assert.equal(code, 0, stderr);
+    const responses = stdout.trimEnd().split("\n").map(line => JSON.parse(line));
+    assert.deepEqual(responses.map(response => response.id), [1, 2, 3]);
+    assert.equal(responses[1].result.isError, true);
+    assert.match(responses[1].result.content[0].text, /^Error: Database operation failed/);
+    assert.deepEqual(responses[2].result, {});
+    if (target.app === "mysql") assert.match(stderr, /MyXQL\.Connection.*disconnected:/);
+    console.log(`${target.app}: stdio timeout, JSON-only stdout and EOF checks passed`);
+  } finally {
+    if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
+  }
+}
+
 for (const target of targets) {
   const client = new Client({ name: "mcp-ex-interop", version: "1.0.0" });
   const transport = new StdioClientTransport({ command: executable(target), args: ["--stdio"], env: environment(target), stderr: "pipe" });
@@ -47,6 +83,8 @@ for (const target of targets) {
   } finally {
     await client.close();
   }
+
+  await checkStdioTimeout(target);
 
   const process = spawn(executable(target), ["--http"], { env: { ...environment(target), REMOTE_SECRET_KEY: "interop-test-token", PORT: String(target.http) }, stdio: ["ignore", "pipe", "pipe"] });
   let logs = "";

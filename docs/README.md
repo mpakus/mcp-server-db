@@ -5,6 +5,11 @@ This documentation describes the Elixir implementations in `mcp-ex-mysql/`,
 workspace root unless a guide says otherwise. Replace example database names,
 credentials and absolute paths with your own values.
 
+The [2026-10-19 audit](../.worklog/audit-2026-10-19.md) identified three application
+defects and dependency security patches. They are resolved in
+[the follow-up fixes](../.worklog/fixes-2026-10-19.md), with regression coverage,
+passing database/SDK/timeout checks and clean Hex audits.
+
 | Guide | Audience | Contents |
 | --- | --- | --- |
 | [User guide](USER-GUIDE.md) | Users and client integrators | Installation, builds, stdio client configuration, tool calls, results and resources |
@@ -32,6 +37,6 @@ The [TypeScript reference](../mcp-server-mysql/README.md) has its own
 documentation; its configuration and deployment instructions do not automatically
 apply to the Elixir servers.
 
-Documentation was checked against the source on 2026-10-05. The latest recorded
-full runtime verification is dated 2026-09-30; see
+Documentation and the latest full runtime verification were updated on
+2026-10-19; see
 [test evidence and limits](TESTING.md#recorded-evidence-and-limits).
