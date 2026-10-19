@@ -3,6 +3,19 @@
 Elixir/Postgrex MCP server with `pg_query`, schema resources, stdio and
 authenticated stateless HTTP. Keep `../mcp-ex-core` beside this project.
 
+## Documentation
+
+The complete documentation is maintained in the parent's [docs/](../docs/README.md):
+
+- [User guide](../docs/USER-GUIDE.md): asdf installation, client setup, queries, results and resources.
+- [Configuration](../docs/CONFIGURATION.md#postgresql-connection): PostgreSQL settings and all shared flags.
+- [Security and SQL](../docs/SECURITY.md): schema permissions, read-only transactions and PII limits.
+- [Operations](../docs/OPERATIONS.md): HTTP headers, TLS, socket directories, tunnels and process lifecycle.
+- [Developer guide](../docs/DEVELOPER-GUIDE.md), [testing](../docs/TESTING.md) and [troubleshooting](../docs/TROUBLESHOOTING.md).
+
+The sections below provide a PostgreSQL quick reference. Commands run from this
+application directory unless they explicitly use a parent path.
+
 ## Build and run
 
 Install the asdf runtime using the [root instructions](../README.md), then:

@@ -4,6 +4,18 @@ Shared library for the two Elixir database MCP applications. Database adapters
 own pools, transactions and metadata SQL; the core owns MCP, transports,
 configuration, single-statement SQL policy and PII masking.
 
+## Documentation
+
+The canonical [documentation index](../docs/README.md) covers both applications:
+
+- [Developer guide](../docs/DEVELOPER-GUIDE.md): architecture, source map, contracts and extension workflow.
+- [Configuration](../docs/CONFIGURATION.md): every database, permission, PII and transport variable.
+- [Security and SQL policy](../docs/SECURITY.md): exact permission evaluation and practical boundaries.
+- [User guide](../docs/USER-GUIDE.md), [operations](../docs/OPERATIONS.md), [testing](../docs/TESTING.md) and [troubleshooting](../docs/TROUBLESHOOTING.md).
+
+This library has no standalone server executable. The sections below summarize
+shared behavior; commands in the Checks section run from this library directory.
+
 ## Common configuration
 
 Process environment supplies settings; `.env` is not loaded automatically.

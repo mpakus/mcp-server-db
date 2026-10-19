@@ -3,6 +3,19 @@
 Elixir/MyXQL MCP server with `mysql_query`, schema resources, stdio and
 authenticated stateless HTTP. Keep `../mcp-ex-core` beside this project.
 
+## Documentation
+
+The complete documentation is maintained in the parent's [docs/](../docs/README.md):
+
+- [User guide](../docs/USER-GUIDE.md): asdf installation, client setup, queries, results and resources.
+- [Configuration](../docs/CONFIGURATION.md#mysql-connection): MySQL settings and all shared flags.
+- [Security and SQL](../docs/SECURITY.md): permissions, read-only transactions, DDL and PII limits.
+- [Operations](../docs/OPERATIONS.md): HTTP headers, TLS, sockets, tunnels and process lifecycle.
+- [Developer guide](../docs/DEVELOPER-GUIDE.md), [testing](../docs/TESTING.md) and [troubleshooting](../docs/TROUBLESHOOTING.md).
+
+The sections below provide a MySQL quick reference. Commands run from this
+application directory unless they explicitly use a parent path.
+
 ## Build and run
 
 Install the asdf runtime using the [root instructions](../README.md), then:

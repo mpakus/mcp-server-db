@@ -86,3 +86,13 @@ writes and denied sensitive references on each transport.
   targets; database grants must constrain indirect function/trigger/view effects.
 - No deployment or application-database mutation was performed. Test containers
   and their disposable storage are removed after verification.
+
+## Documentation update — 2026-10-05
+
+Requested a full user/developer reference under `docs/` and updated READMEs.
+Source review, guide authoring and documentation validation are complete. The
+reference covers installation, client usage, all 54 configuration variables,
+security/SQL policy, operations, architecture, development, testing and
+troubleshooting. Local links/anchors and JSON/shell examples passed checks.
+Tasks and exact evidence are tracked in [docs.md](docs.md). The runtime
+verification above remains dated 2026-09-30; application code was unchanged.
