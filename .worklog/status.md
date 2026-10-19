@@ -131,3 +131,40 @@ and real timeout/JSON-only stdout/stderr/EOF probes for both applications.
 Regressions reproduced the failures before implementation changes. The
 TypeScript reference and root runtime pins were untouched. See
 [fixes-2026-10-19.md](fixes-2026-10-19.md) for exact evidence and scope limits.
+
+## Dashboard planning — 2026-10-19
+
+Analyzed a simple server dashboard. The recommended first release is a separate
+CLI/watch viewer reading private opt-in instance snapshots, shared across MySQL
+and PostgreSQL and working with both stdio and HTTP. No runtime implementation
+was started. Architecture, tradeoffs, metric definitions, failure isolation,
+privacy, file-level work and acceptance tests are in
+[docs/DASHBOARD-PLAN.md](../docs/DASHBOARD-PLAN.md); planning progress is in
+[dashboard-plan-2026-10-19.md](dashboard-plan-2026-10-19.md).
+
+
+## Dashboard implemented — 2026-10-19
+
+- Both escripts provide `status`, `resources`, `--json`, `--instance` and
+  `--watch`, with viewer dispatch before database/HTTP configuration or startup.
+- `MCP_DASHBOARD=true` enables isolated fixed-label ETS counters, private atomic
+  snapshots and bounded health/pool/resource sampling. No runtime dependencies
+  or listeners were added. Query/parameter/result/error/credential/client data
+  are excluded from snapshots; topology/resource names remain visible.
+- The README and canonical Markdown guides now document enablement, commands,
+  counters, freshness, exit codes, privacy, contracts, failure behavior and a
+  reproducible fixture demo. `docs/images/dashboard.jpg` is a rendered screenshot
+  of actual CLI stdout; the text capture is retained beside it.
+- `MCP_INTEGRATION=true ./bin/check` passed 24 ExUnit tests (20 core, two MySQL,
+  two PG), warning-as-error compilation, escript builds and official SDK stdio/
+  HTTP checks for both databases. Diagnostics was enabled during real SDK and
+  raw timeout/framing/EOF checks. Viewer tests supplied invalid DB/HTTP settings,
+  exercised JSONL watch cancellation and verified the server remained usable.
+- Documentation checks passed for 14 Markdown files, 163 local links/anchors,
+  16 JSON examples and 56 shell snippets (syntax only). Original TypeScript
+  checkout stayed clean. Disposable demo/server/preview processes and Compose
+  fixtures were stopped after verification.
+
+Details and known limits: [dashboard-2026-10-19.md](dashboard-2026-10-19.md).
+No production/load/overhead benchmark, full-disk fault injection or remote admin
+interface is claimed. Earlier TLS/socket/deployment validation limits remain.

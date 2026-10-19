@@ -6,7 +6,8 @@ stateless HTTP, and disable writes by default.
 
 Status as of 2026-10-19: the three defects from the
 [completion audit](.worklog/audit-2026-10-19.md) are fixed, runtime security
-dependencies are patched, and the full check and Hex audits pass. See the
+dependencies are patched, and the full check and Hex audits pass. Both escripts now include an optional
+[local CLI dashboard](docs/DASHBOARD.md). See the
 [fix log](.worklog/fixes-2026-10-19.md) for regression evidence and verification limits.
 
 | Project | Purpose | Tool | Resource URI |
@@ -27,6 +28,7 @@ Start with the [documentation index](docs/README.md), or open a guide directly:
 - [User guide](docs/USER-GUIDE.md): install with asdf, build, connect clients, query and discover tables.
 - [Configuration reference](docs/CONFIGURATION.md): every environment variable, defaults and precedence.
 - [Security and SQL policy](docs/SECURITY.md): write permissions, read-only transactions, PII and supported SQL.
+- [Dashboard](docs/DASHBOARD.md): status, watch, resources, statistics and private snapshots.
 - [Operations](docs/OPERATIONS.md): HTTP deployment, TLS, sockets, tunnels, monitoring and upgrades.
 - [Developer guide](docs/DEVELOPER-GUIDE.md): architecture, module contracts, extension points and contribution workflow.
 - [Testing](docs/TESTING.md): local checks, disposable databases and official MCP SDK interoperability.
@@ -68,6 +70,32 @@ PG_HOST=127.0.0.1 PG_PORT=5432 PG_USER=reader PG_PASS=replace-me PG_DB=app PG_SC
 Use [client configuration](docs/USER-GUIDE.md#connect-a-stdio-client) for normal
 usage. `.env` files must be exported explicitly. Restart the process after
 changing configuration.
+
+## Server dashboard
+
+Add `MCP_DASHBOARD=true` to your MCP server's environment and restart it.
+In another terminal under the same account:
+
+```sh
+./mcp-ex-mysql/mcp-ex-mysql status
+./mcp-ex-pg/mcp-ex-pg status --watch
+./mcp-ex-pg/mcp-ex-pg status --json
+./mcp-ex-pg/mcp-ex-pg resources --instance INSTANCE_ID
+```
+
+Copy `INSTANCE_ID` from `status`. The viewer reads private local snapshots and
+needs no database credentials. It shows uptime, database-health/sample ages,
+pool readiness/queue length, BEAM memory/processes, aggregate request/query
+statistics and cached resource names. Ctrl+C stops only the viewer.
+
+![MySQL and PostgreSQL dashboard CLI example](docs/images/dashboard.jpg)
+
+Browser-rendered screenshot of real CLI output from the disposable fixtures:
+each server completed eight reads and rejected two policy checks. The
+application runs in your terminal; the screenshot frame is documentation only.
+SQL, parameters, returned rows and credentials are excluded from snapshots.
+Read [dashboard setup, metric definitions and reproduction](docs/DASHBOARD.md)
+for custom directories, JSON/watch behavior, freshness and exit codes.
 
 ## Behavior and limits
 

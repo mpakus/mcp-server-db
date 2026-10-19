@@ -16,6 +16,8 @@ defmodule McpEx.Pg do
     |> Postgrex.start_link()
   end
 
+  def pool_metrics(context), do: DBConnection.get_connection_metrics(context.pool)
+
   def execute(context, sql, values, mode) do
     result =
       Postgrex.transaction(

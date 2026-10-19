@@ -19,6 +19,8 @@ passing database/SDK/timeout checks and clean Hex audits.
 | [Developer guide](DEVELOPER-GUIDE.md) | Developers | Architecture, source map, internal contracts, change workflow and compatibility |
 | [Testing](TESTING.md) | Developers and operators | Unit checks, disposable database setup, SDK checks and evidence limits |
 | [Troubleshooting](TROUBLESHOOTING.md) | All audiences | Startup, transport, SQL and metadata problems; error/status reference |
+| [Dashboard](DASHBOARD.md) | Users, operators and developers | CLI/watch setup, resources, metric definitions, privacy, screenshot and demo |
+| [Dashboard design](DASHBOARD-PLAN.md) | Developers | Original design and implementation scope |
 
 For a first connection, follow the user guide, select the database settings in
 the configuration reference, then use table resources before querying. For HTTP,

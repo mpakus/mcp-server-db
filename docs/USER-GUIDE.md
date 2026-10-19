@@ -133,8 +133,7 @@ inherit your shell's asdf setup. For a wrapper that selects the pinned runtime
 from the workspace, see [process launch](OPERATIONS.md#process-launch-and-lifecycle).
 
 Without flags, transport defaults to stdio unless `IS_REMOTE_MCP=true`. Explicit
-`--stdio` chooses stdio; `--http` chooses HTTP. The only supported CLI flags are
-these two and they cannot be combined. Settings, including database credentials,
+`--stdio` chooses stdio; `--http` chooses HTTP. These transport flags cannot be combined. Settings, including database credentials,
 are environment variables. HTTP usage is in [Operations](OPERATIONS.md#run-http).
 
 ## Query tools
@@ -317,3 +316,12 @@ printf '%s\n' \
 For PostgreSQL, use its exported settings, executable and `pg_query` tool name.
 The notification has no response; the three requests do. This is a protocol
 smoke check, not a replacement for the database and SDK [tests](TESTING.md).
+
+## Inspect a running server
+
+Enable `MCP_DASHBOARD=true` in the server's launch environment and restart it.
+In another terminal, run the appropriate executable's `status`, `status --watch`
+or `status --json` command. Use `resources --instance INSTANCE_ID` for the cached
+resource list. The viewer requires the same OS account and snapshot directory,
+with no database credentials. The [dashboard guide](DASHBOARD.md) includes a
+screenshot, copyable examples, metric definitions and a disposable demo.

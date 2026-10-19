@@ -236,3 +236,20 @@ Request limits and timeouts bound input/work, not output size or client
 concurrency. Table/resource lists and query results are returned in full, without
 pagination, rate limiting or a result-byte cap. Use database restrictions,
 explicit columns and bounded queries for large or shared deployments.
+
+
+## Local dashboard snapshots
+
+The opt-in [dashboard](DASHBOARD.md#storage-privacy-and-lifecycle) writes
+aggregate counters and an explicit metadata allowlist into private local files.
+It records database host/port/name/schema and resource URI/name/title/MIME, which
+can reveal topology and naming even when PII mode is enabled. It excludes SQL,
+bound parameters, returned values, column metadata/defaults, raw database errors,
+credentials, bearer tokens and client identity. These exclusions apply with PII
+mode disabled too. It is a status display, not an audit trail or proof of commits.
+
+The directory/file ownership, permissions, regular-file checks, size bound and
+schema validation apply to readers as well as writers. Terminal output escapes
+control characters from metadata. JSON output remains machine-readable escaped
+JSON. Use the same OS account, a private directory and local storage; do not
+serve snapshot files from a web root or relax permissions to share them.

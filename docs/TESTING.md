@@ -160,13 +160,24 @@ offline-capable format/compile/test steps.
 | PostgreSQL real database | Binding, numeric/large-integer/date precision, read-only rejection of modifying functions/CTEs/EXPLAIN ANALYZE, writes, rollback, schema isolation, denied quoted/unquoted three-part ALTER targets, table DDL and masked RETURNING |
 | Official MCP SDK | Initialize, tools/resources, root/table reads, bound queries, denied writes and sensitive references, stdio and stateless HTTP for both servers |
 | Raw escripts | Actual timeout results, JSON-only stdout, MySQL driver logging on stderr, post-error ping and clean EOF exit |
+| Dashboard | Fixed counters/outcomes, private atomic files, invalid/symlink/oversized files, distinct instances, inventory cap, collector loss, hung sampler, storage-permission recovery, freshness and terminal escaping; built viewers with invalid DB settings, JSONL watch cancellation and live MySQL/PG stdio/HTTP snapshots |
 | HTTP boundaries | Exact bearer matching, rejected Origin, protocol version, size and media types; SDK concurrent clients |
 
 ## Recorded evidence and limits
 
-The latest recorded full run is 2026-10-19, after the audit fixes:
-`MCP_INTEGRATION=true ./bin/check` passed all 16 ExUnit tests, both escript
-builds, official SDK stdio/HTTP checks and both raw timeout/framing probes.
+The latest recorded full run is 2026-10-19, after dashboard implementation:
+`MCP_INTEGRATION=true ./bin/check` passed all 24 ExUnit tests (20 core and two
+per adapter), both escript builds, official SDK stdio/HTTP and dashboard checks,
+and both raw timeout/framing probes. Dashboard publishing was enabled on both
+transports for both databases. Separate built-escript viewers used deliberately
+invalid database/HTTP settings and still read snapshots successfully. Watch
+JSONL/cancellation left the server responsive.
+
+A real fixture demo produced the [documented screenshot](DASHBOARD.md#screenshot-and-example).
+Failure isolation tests cover unsafe storage permissions, collector loss and
+a hung metrics worker; full-disk fault injection and instrumentation throughput
+benchmarking were not performed. See the
+[dashboard implementation log](../.worklog/dashboard-2026-10-19.md).
 Hex audits passed for all three Mix projects with Bandit 1.13.1, Decimal 3.1.2
 and Bandit's required Thousand Island 1.6.0. Detailed evidence and earlier dated
 runs are in [.worklog/status.md](../.worklog/status.md) and

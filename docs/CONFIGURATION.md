@@ -2,8 +2,10 @@
 
 The process environment is read once at startup by
 [`McpEx.Config`](../mcp-ex-core/lib/mcp_ex/config.ex). Neither application loads
-`.env` automatically. Restart after changing values. The CLI accepts only
-`--stdio` or `--http`; there are no configuration CLI flags.
+`.env` automatically. Restart after changing values. Server launch accepts
+`--stdio` or `--http`; configuration uses environment variables. Separate
+[dashboard commands](DASHBOARD.md) accept inspection/watch flags and bypass
+database/HTTP configuration loading.
 
 Booleans accept exactly lowercase `true` or `false`. Missing values take the
 defaults below. An empty boolean or numeric value is invalid; an empty string
@@ -178,3 +180,19 @@ The request limit measures bytes, not characters. A JSON body has overhead
 beyond its SQL string, so SQL at the limit may not fit in a transport frame.
 Oversized stdio input emits a parse error and exits; HTTP rejects it with 413.
 There is no corresponding result-byte limit.
+
+## Dashboard
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MCP_DASHBOARD` | `false` | Enable private local snapshots in the running server; exactly `true` or `false` |
+| `MCP_DASHBOARD_DIR` | `$XDG_STATE_HOME/mcp-ex` or `~/.local/state/mcp-ex` | Snapshot directory, expanded to an absolute path; set identically for server and viewer |
+
+`XDG_STATE_HOME` is the standard operating-system directory override, not a
+server-specific setting. Empty directory overrides are treated as unset; prefer absolute paths.
+A custom existing directory must be owned by the current user with no group/world
+permissions (`chmod 700 /your/private/directory`). Files use mode `0600`.
+Diagnostics fail independently of MCP when storage/UID lookup is unavailable.
+The status/resources viewer reads only directory selection from the environment;
+it does not validate database credentials or start a pool. See
+[Dashboard](DASHBOARD.md) for metrics, sampling intervals and exit codes.

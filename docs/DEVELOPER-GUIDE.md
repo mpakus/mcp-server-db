@@ -15,6 +15,8 @@ no Ecto layer, Phoenix application, web UI or custom database protocol.
 | [`redact.ex`](../mcp-ex-core/lib/mcp_ex/redact.ex) | Database value normalization, sensitive-name detection, recursive masks and metadata filtering |
 | [`server.ex`](../mcp-ex-core/lib/mcp_ex/server.ex) | JSON-RPC dispatch, initialization, tools, resources, result envelopes and safe errors |
 | [`cli.ex`](../mcp-ex-core/lib/mcp_ex/cli.ex) | Escript lifecycle, pool startup/probe, transport choice and bounded stdio input |
+| [`diagnostics.ex`](../mcp-ex-core/lib/mcp_ex/diagnostics.ex) | Optional ETS counters, private snapshots and bounded samplers |
+| [`monitor.ex`](../mcp-ex-core/lib/mcp_ex/monitor.ex) | Status/resources rendering, JSON/watch, freshness and exit codes |
 | [`http.ex`](../mcp-ex-core/lib/mcp_ex/http.ex) | Plug handler, auth/origin/version checks, media types and bounded HTTP body handling |
 | [`mysql.ex`](../mcp-ex-mysql/lib/mcp_ex/mysql.ex) | MyXQL pool, transaction execution, MySQL metadata SQL and CLI entry point |
 | [`pg.ex`](../mcp-ex-pg/lib/mcp_ex/pg.ex) | Postgrex pool, startup parameters, transaction execution, schema metadata and CLI entry point |
@@ -48,8 +50,10 @@ flowchart TD
 ```
 
 At startup, the dialect-specific CLI delegates to `McpEx.CLI.main/2`, which
+first dispatches `status`/`resources` into the snapshot viewer. Server launch
 validates configuration, starts the adapter pool and probes it through the
-read-only execution path. It then enters the stdio loop or starts Bandit with
+read-only execution path. Optional diagnostics starts after this probe, unlinked
+from the CLI owner, and monitors that owner for cleanup. The CLI then enters the stdio loop or starts Bandit with
 the context map as Plug options. Driver/library processes are linked; no custom
 OTP Application supervisor or release lifecycle is defined.
 
@@ -77,9 +81,13 @@ details out of the core.
 | `start_link(config)` | Starts the driver pool and returns `{:ok, pool}` or a driver error |
 | `execute(context, sql, values, mode)` | Accepts `:read`, `:write` or `:ddl`; returns `{:ok, result}` or `{:error, exception_or_reason}` |
 | `tables(context)` | Returns a driver result with the canonical lowercase table metadata aliases |
+| `pool_metrics(context)` | Returns DBConnection metric maps with `ready_conn_count` and `checkout_queue_length`; only the bounded diagnostic worker calls it |
 | `columns(context, schema, table)` | Returns a driver result with canonical lowercase column aliases in ordinal order |
 
-The context map is `%{pool: pool, adapter: adapter_module, config: config}`.
+The context map is `%{pool: pool, adapter: adapter_module, config: config}`
+with optional `diagnostics: %{pid: publisher, table: ets_table}`. Missing/disabled
+diagnostics are no-ops. Sampling contexts deliberately omit credentials, HTTP
+tokens and the diagnostics handle.
 The result needs `columns`, `rows` and `num_rows`; MySQL may also provide
 `last_insert_id`. `columns: nil` selects the command-result envelope. Otherwise
 `McpEx.Server.rows/1` zips column names and each row into a map; duplicate names
@@ -185,6 +193,46 @@ Adding a different database is more than returning a new dialect atom:
 configuration prefixes, SQL lexical rules, resource schemes, tool names and
 engine transaction behavior currently assume these two dialects. Extend those
 explicit cases and supply live adapter checks before advertising another engine.
+
+## Dashboard implementation
+
+Keep the collection boundary in `McpEx.Diagnostics` and presentation in
+`McpEx.Monitor`. The request path performs fixed-label ETS updates; it never
+waits for filesystem work or background jobs. `Server.handle/3` wraps dispatch
+once for RPC accounting. Known SQL tools record argument validation, policy,
+database and result-processing outcomes separately. HTTP/stdio record failures
+before dispatch; HTTP records the final response status. `Server.info/1` supplies
+the shared identity to MCP and snapshots.
+
+The CLI owner owns the ETS table and an unlinked GenServer publishes it. The
+publisher monitors the owner and cleans up its instance file during normal
+termination. It serializes linked/monitored sample workers, kills deadline
+violations and continues heartbeats. Workers inherit only the pool, adapter
+and an allowlisted sample config. A dead publisher or missing ETS table does
+not alter MCP responses. A dead publisher is intentionally not restarted by a
+supervisor in this escript architecture.
+
+The two adapters expose DBConnection pool metrics while the shared core stays
+independent of that package. The installed DBConnection implementation uses
+an infinite GenServer.call for this API, so keep the 500 ms worker deadline.
+Health and inventory reuse native read-only execution with at most a two-second
+worker lifetime; they do not increment client statistics. The inventory reuses
+`resources/list` with diagnostics absent and retains only URI/name/title/MIME,
+a total count and truncation, never resource contents or column defaults.
+
+The publisher atomically renames an exclusive same-directory `0600` temporary
+file. Readers validate the owner/private directory and regular file, 1 MiB
+bound, exact schema version and required types before rendering. Never display
+raw metadata without terminal-control escaping or introduce arbitrary counter
+labels/atoms from SQL, clients or errors. Changes to the snapshot contract must
+update both writer/reader validation and schema-version handling.
+
+See [Dashboard](DASHBOARD.md) for all metric/freshness definitions and current
+limits. Regression coverage lives in `test/diagnostics_test.exs` in the core
+and [`test/dashboard.mjs`](../test/dashboard.mjs) in the official SDK harness.
+[`test/dashboard-demo.mjs`](../test/dashboard-demo.mjs) launches only disposable
+fixture clients for reproducible output/screenshots. It performs eight reads
+and two rejected policy checks per server; it never enables write permissions.
 
 ## Dependencies, versions and compatibility
 

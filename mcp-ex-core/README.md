@@ -38,6 +38,8 @@ Booleans accept exactly `true` or `false`; invalid settings fail startup.
 | `REMOTE_SECRET_KEY` | unset | Required for HTTP; exact bearer token |
 | `MCP_HTTP_HOST`, `PORT` | `127.0.0.1`, `3000` | HTTP bind IP and port |
 | `MCP_ALLOWED_ORIGINS` | empty | Comma-separated accepted Origins; Origin-bearing requests denied by default |
+| `MCP_DASHBOARD` | `false` | Enable private local diagnostic snapshots |
+| `MCP_DASHBOARD_DIR` | XDG state directory or `~/.local/state/mcp-ex` | Same private directory for publisher and viewer |
 | `MCP_MAX_REQUEST_BYTES` | `1048576` | Maximum SQL/message input bytes |
 
 Schema overrides replace each operation's global default. MySQL permission
@@ -121,3 +123,14 @@ mix test
 
 ExUnit covers configuration, SQL policy, masking, protocol lifecycle, resource
 shapes and HTTP boundaries without a database. [License](../LICENSE).
+
+
+## Dashboard internals
+
+`McpEx.Diagnostics` owns optional aggregate counters, bounded background samples
+and private atomic snapshots. `McpEx.Monitor` provides status/resources, JSON and
+watch views. The escript dispatches viewer commands before database configuration
+or pool startup. The adapter supplies `pool_metrics(context)` through
+DBConnection. No dashboard dependencies, new connections or listener are added.
+See [developer contracts](../docs/DEVELOPER-GUIDE.md#dashboard-implementation)
+and [operator instructions](../docs/DASHBOARD.md).

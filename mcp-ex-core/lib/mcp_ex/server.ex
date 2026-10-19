@@ -1,13 +1,16 @@
 defmodule McpEx.Server do
   @moduledoc "The database MCP request handlers, shared by stdio and stateless HTTP."
-  alias McpEx.{Config, Policy, Redact}
+  alias McpEx.{Config, Diagnostics, Policy, Redact}
   @versions ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
   def versions, do: @versions
 
-  def handle(message, context, state \\ :ready)
+  def info(config), do: %{"name" => "mcp-ex-#{config.dialect}", "version" => "0.1.0"}
 
-  def handle(%{"jsonrpc" => "2.0", "method" => method} = message, context, state)
-      when is_binary(method) do
+  def handle(message, context, state \\ :ready),
+    do: Diagnostics.rpc(context, message, fn -> do_handle(message, context, state) end)
+
+  defp do_handle(%{"jsonrpc" => "2.0", "method" => method} = message, context, state)
+       when is_binary(method) do
     params = Map.get(message, "params", %{})
 
     cond do
@@ -45,10 +48,10 @@ defmodule McpEx.Server do
     end
   end
 
-  def handle(%{"jsonrpc" => "2.0", "id" => _} = message, _, state)
-      when is_map_key(message, "result") or is_map_key(message, "error"), do: {nil, state}
+  defp do_handle(%{"jsonrpc" => "2.0", "id" => _} = message, _, state)
+       when is_map_key(message, "result") or is_map_key(message, "error"), do: {nil, state}
 
-  def handle(_, _, state), do: {error(nil, -32600, "Invalid JSON-RPC request"), state}
+  defp do_handle(_, _, state), do: {error(nil, -32600, "Invalid JSON-RPC request"), state}
 
   def error(id, code, message),
     do: %{"jsonrpc" => "2.0", "id" => id, "error" => %{"code" => code, "message" => message}}
@@ -62,7 +65,7 @@ defmodule McpEx.Server do
     %{
       "protocolVersion" => if(version in @versions, do: version, else: hd(@versions)),
       "capabilities" => %{"tools" => %{}, "resources" => %{}},
-      "serverInfo" => %{"name" => "mcp-ex-#{context.config.dialect}", "version" => "0.1.0"},
+      "serverInfo" => info(context.config),
       "instructions" =>
         "Use table resources for schema discovery. Submit one SQL statement per call. Writes require configured permissions."
     }
@@ -106,46 +109,71 @@ defmodule McpEx.Server do
   defp dispatch("tools/call", params, context) do
     unless params["name"] == context.config.tool, do: throw({:rpc, -32602, "Unknown tool"})
 
-    try do
-      arguments = params["arguments"]
-      unless is_map(arguments), do: raise(ArgumentError, "arguments must be an object")
+    Diagnostics.tool(context, fn ->
+      try do
+        {sql, values} =
+          Diagnostics.step(context, "validation_errors", fn ->
+            arguments = params["arguments"]
+            unless is_map(arguments), do: raise(ArgumentError, "arguments must be an object")
 
-      if Enum.any?(Map.keys(arguments), &(&1 not in ["sql", "params"])),
-        do: raise(ArgumentError, "Unknown tool argument")
+            if Enum.any?(Map.keys(arguments), &(&1 not in ["sql", "params"])),
+              do: raise(ArgumentError, "Unknown tool argument")
 
-      sql = arguments["sql"]
-      values = Map.get(arguments, "params", [])
-      unless is_list(values), do: raise(ArgumentError, "params must be an array")
-      policy = Policy.check(sql, context.config)
-      start = System.monotonic_time(:microsecond)
-      result = execute!(context, sql, values, policy.mode)
-      rows = rows(result)
+            values = Map.get(arguments, "params", [])
+            unless is_list(values), do: raise(ArgumentError, "params must be an array")
+            unless is_binary(arguments["sql"]), do: raise(ArgumentError, "sql must be a string")
+            {arguments["sql"], values}
+          end)
 
-      rows =
-        if policy.introspection == :columns and context.config.pii and
-             not context.config.pii_introspection,
-           do: Redact.filter_introspection(rows, context.config),
-           else: rows
+        policy =
+          Diagnostics.step(context, "policy_rejections", fn ->
+            Policy.check(sql, context.config)
+          end)
 
-      payload =
-        if is_nil(result.columns),
-          do: %{"affectedRows" => result.num_rows, "insertId" => Map.get(result, :last_insert_id)},
-          else: rows
+        Diagnostics.count(context, "queries_" <> to_string(policy.mode))
+        start = System.monotonic_time(:microsecond)
 
-      payload = Redact.apply(payload, context.config)
-      elapsed = (System.monotonic_time(:microsecond) - start) / 1000
+        result =
+          Diagnostics.step(context, "database_failures", fn ->
+            execute!(context, sql, values, policy.mode)
+          end)
 
-      %{
-        "content" => [
-          text(Jason.encode!(payload)),
-          text("Query execution time: #{Float.round(elapsed, 2)} ms")
-        ],
-        "isError" => false
-      }
-    rescue
-      error ->
-        %{"content" => [text("Error: " <> safe_error(error, context.config))], "isError" => true}
-    end
+        Diagnostics.step(context, "processing_failures", fn ->
+          rows = rows(result)
+
+          rows =
+            if policy.introspection == :columns and context.config.pii and
+                 not context.config.pii_introspection,
+               do: Redact.filter_introspection(rows, context.config),
+               else: rows
+
+          payload =
+            if is_nil(result.columns),
+              do: %{
+                "affectedRows" => result.num_rows,
+                "insertId" => Map.get(result, :last_insert_id)
+              },
+              else: rows
+
+          payload = Redact.apply(payload, context.config)
+          elapsed = (System.monotonic_time(:microsecond) - start) / 1000
+
+          %{
+            "content" => [
+              text(Jason.encode!(payload)),
+              text("Query execution time: #{Float.round(elapsed, 2)} ms")
+            ],
+            "isError" => false
+          }
+        end)
+      rescue
+        error ->
+          %{
+            "content" => [text("Error: " <> safe_error(error, context.config))],
+            "isError" => true
+          }
+      end
+    end)
   end
 
   defp dispatch("resources/list", _, context) do

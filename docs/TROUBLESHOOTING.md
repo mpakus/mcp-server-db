@@ -18,7 +18,7 @@ affected escript.
 | `... must be true or false` | Empty, uppercase, numeric or another invalid boolean | Use exact `true`/`false`, or unset it for the default |
 | `... must be an integer from 1 to ...` | Invalid port, pool size, timeout or request limit | Use the range in [Configuration](CONFIGURATION.md); zero is not an unlimited setting |
 | `MCP_HTTP_HOST must be an IP address` | A hostname such as `localhost` was supplied | Use `127.0.0.1`, `::1` or another literal bind address |
-| `Use --stdio or --http` | Unknown flag, including `--help` or `--version` | Use the supported transport flags and environment settings |
+| `Use --stdio or --http` | Unknown server launch flag, including `--help` or `--version` | Use transport flags/environment settings; dashboard commands start with `status` or `resources` |
 | `Choose one transport` | Both flags were provided | Launch with only one transport flag |
 | Remote secret required during stdio startup | `IS_REMOTE_MCP=true` is inherited | Set it to `false`/unset it for local mode, or supply the required secret |
 | `Server startup failed; check database connectivity and configuration` | Pool startup or SELECT 1 probe failed | Verify host/port, user/password, database, reachability, TLS and socket settings using the same launch environment |
@@ -146,3 +146,21 @@ Compose project when a failed mutation leaves fixture state behind.
 Upstream driver deprecation warnings under Elixir 1.20 were observed during the
 recorded run; they are distinct from warnings/errors in application code.
 Record the actual failed stage and command in `.worklog/` before claiming a fix.
+
+## Dashboard problems
+
+| Symptom | Check |
+| --- | --- |
+| No instances, exit 1 | Set `MCP_DASHBOARD=true` on the server and restart; inspect with the matching MySQL/PG executable and same OS account |
+| GUI client is running, shell sees nothing | Compare `MCP_DASHBOARD_DIR`, HOME and XDG_STATE_HOME in both launch environments |
+| Dashboard disabled / snapshot unavailable | Use a user-owned real directory with mode `0700`; files must be owned regular files with no group/world access; fix storage capacity and restart if the collector died |
+| Exit 2 / cannot read snapshots | Check malformed/unsupported/oversized files, symlinks and ownership; one invalid recognized instance file fails inspection |
+| Several instances found | Copy the full ID from `status` into `resources --instance ID` |
+| `stale`, `unknown` or `degraded` | Inspect independent snapshot/health/resource ages; check clocks, collector, pool and database; stale does not prove a dead process |
+| Pool timeout while MCP still works | The bounded sampler may time out on pool pressure; inspect the next sample and server logs |
+| Missing resources | Inventory refresh is about once per minute; pending/failed refresh shows its status and preserves prior successful data; at most 200 entries are retained |
+| Query rate is `--` | One-shot, first watch sample, unchanged uptime or reset counters cannot establish a rate |
+
+See [dashboard semantics and exit codes](DASHBOARD.md#freshness-and-exit-codes).
+Restarting a server creates a new instance ID. Stale snapshots are not auto-deleted;
+verify the corresponding process is stopped before removing its file.

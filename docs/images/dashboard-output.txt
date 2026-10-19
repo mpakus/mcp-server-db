@@ -1,0 +1,35 @@
+$ ./mcp-ex-mysql/mcp-ex-mysql status
+MCP EX / STATUS   2026-10-19T22:54:34.423983Z
+========================================================================================
+mcp-ex-mysql 0.1.0  [HEALTHY]  stdio  PID 4904
+Instance b679ee696e0fa4faaee4d83f   uptime 20.0s   snapshot 1.9s ago
+Database 127.0.0.1:13307/mcp_test  schema mcp_test  READ ONLY  PII on
+Health ok (21.9s ago)   Pool 10/10 ready, 0 queued (3.9s ago)
+RPC 12 requests / 0 errors / 1 notifications
+Tools 10 completed / 8 ok / 2 failed   latency avg 1.79ms / max 4.59ms
+Failures validation 0 / policy 2 / database 0 / processing 0
+Query attempts read 8 / write 0 / ddl 0   rate -- (watch for rate)
+Transport parse 0 / oversized 0   HTTP rejected 0
+BEAM 63.1 MiB / 133 processes
+Resources 2 / ok / sampled 21.9s ago
+  Tables  mysql://tables
+  mcp_test.users  mysql://tables/mcp_test/users
+----------------------------------------------------------------------------------------
+
+$ ./mcp-ex-pg/mcp-ex-pg status
+MCP EX / STATUS   2026-10-19T22:54:34.605237Z
+========================================================================================
+mcp-ex-pg 0.1.0  [HEALTHY]  stdio  PID 4915
+Instance 8772ea4e2e49e60126af05fc   uptime 20.0s   snapshot 1.8s ago
+Database 127.0.0.1:15433/mcp_test  schema public  READ ONLY  PII on
+Health ok (21.8s ago)   Pool 10/10 ready, 0 queued (3.8s ago)
+RPC 12 requests / 0 errors / 1 notifications
+Tools 10 completed / 8 ok / 2 failed   latency avg 2.18ms / max 4.76ms
+Failures validation 0 / policy 2 / database 0 / processing 0
+Query attempts read 8 / write 0 / ddl 0   rate -- (watch for rate)
+Transport parse 0 / oversized 0   HTTP rejected 0
+BEAM 63.5 MiB / 143 processes
+Resources 2 / ok / sampled 21.8s ago
+  Tables  postgres://tables
+  public.users  postgres://tables/public/users
+----------------------------------------------------------------------------------------

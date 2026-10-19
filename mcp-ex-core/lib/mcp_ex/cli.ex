@@ -8,6 +8,19 @@ defmodule McpEx.CLI do
     # The standard handler's output type cannot be changed after it starts.
     :ok = :logger.remove_handler(:default)
     :ok = :logger.add_handler(:default, :logger_std_h, handler)
+
+    case args do
+      [command | options] when command in ["status", "resources"] ->
+        System.halt(McpEx.Monitor.run(command, options, adapter.dialect()))
+
+      _ ->
+        serve(args, adapter)
+    end
+  rescue
+    error -> startup_error(error)
+  end
+
+  defp serve(args, adapter) do
     config = McpEx.Config.load(adapter.dialect())
     remote = config.remote or "--http" in args
 
@@ -21,25 +34,43 @@ defmodule McpEx.CLI do
 
     {:ok, pool} = adapter.start_link(config)
     context = %{pool: pool, adapter: adapter, config: config}
+    probe_started = System.monotonic_time(:microsecond)
     McpEx.Server.execute!(context, "SELECT 1", [], :read)
+    probe_ms = (System.monotonic_time(:microsecond) - probe_started) / 1000
 
-    if remote and "--stdio" not in args do
-      {:ok, _} =
-        Bandit.start_link(plug: {McpEx.HTTP, context}, ip: config.http_ip, port: config.http_port)
+    transport = if remote and "--stdio" not in args, do: "http", else: "stdio"
 
-      Process.sleep(:infinity)
-    else
-      stdio(context, :new)
+    diagnostics =
+      McpEx.Diagnostics.start(context, transport: transport, initial_probe_ms: probe_ms)
+
+    context = Map.put(context, :diagnostics, diagnostics)
+
+    try do
+      if transport == "http" do
+        {:ok, _} =
+          Bandit.start_link(
+            plug: {McpEx.HTTP, context},
+            ip: config.http_ip,
+            port: config.http_port
+          )
+
+        Process.sleep(:infinity)
+      else
+        stdio(context, :new)
+      end
+    after
+      McpEx.Diagnostics.stop(diagnostics)
     end
-  rescue
-    error ->
-      message =
-        if is_struct(error, ArgumentError),
-          do: Exception.message(error),
-          else: "Server startup failed; check database connectivity and configuration"
+  end
 
-      IO.puts(:stderr, message)
-      System.halt(1)
+  defp startup_error(error) do
+    message =
+      if is_struct(error, ArgumentError),
+        do: Exception.message(error),
+        else: "Server startup failed; check database connectivity and configuration"
+
+    IO.puts(:stderr, message)
+    System.halt(1)
   end
 
   defp stdio(context, state) do
@@ -48,14 +79,23 @@ defmodule McpEx.CLI do
         :ok
 
       {:error, reason} ->
+        McpEx.Diagnostics.count(
+          context,
+          if(reason == "Request too large", do: "oversize_errors", else: "parse_errors")
+        )
+
         IO.puts(Jason.encode!(McpEx.Server.error(nil, -32700, reason)))
         if reason == "Request too large", do: System.halt(1), else: stdio(context, state)
 
       {:ok, line} ->
         {response, next} =
           case Jason.decode(line) do
-            {:ok, message} -> McpEx.Server.handle(message, context, state)
-            _ -> {McpEx.Server.error(nil, -32700, "Invalid JSON"), state}
+            {:ok, message} ->
+              McpEx.Server.handle(message, context, state)
+
+            _ ->
+              McpEx.Diagnostics.count(context, "parse_errors")
+              {McpEx.Server.error(nil, -32700, "Invalid JSON"), state}
           end
 
         if response, do: IO.puts(Jason.encode!(response))

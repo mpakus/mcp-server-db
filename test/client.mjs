@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { checkDashboard } from "./dashboard.mjs";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -12,7 +16,8 @@ const targets = [
   { app: "pg", tool: "pg_query", scheme: "postgres", schema: "public", http: 13008,
     env: { PG_HOST: "127.0.0.1", PG_PORT: "15433", PG_USER: "mcp_test", PG_PASS: "mcp_test_password", PG_DB: "mcp_test" } },
 ];
-const environment = target => ({ PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8", ...target.env, ENABLE_PII_REDACTION: "true" });
+const dashboardDir = mkdtempSync(join(tmpdir(), "mcp-ex-sdk-"));
+const environment = target => ({ PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8", ...target.env, ENABLE_PII_REDACTION: "true", MCP_DASHBOARD: "true", MCP_DASHBOARD_DIR: dashboardDir });
 const executable = target => fileURLToPath(new URL(`../mcp-ex-${target.app}/mcp-ex-${target.app}`, import.meta.url));
 
 async function exercise(client, target) {
@@ -73,12 +78,14 @@ async function checkStdioTimeout(target) {
   }
 }
 
+try {
 for (const target of targets) {
   const client = new Client({ name: "mcp-ex-interop", version: "1.0.0" });
   const transport = new StdioClientTransport({ command: executable(target), args: ["--stdio"], env: environment(target), stderr: "pipe" });
   try {
     await client.connect(transport);
     await exercise(client, target);
+    await checkDashboard(target, "stdio", dashboardDir, executable(target), environment(target), client);
     console.log(`${target.app}: official SDK stdio checks passed`);
   } finally {
     await client.close();
@@ -111,10 +118,15 @@ for (const target of targets) {
     assert.equal(wrongToken.status, 401);
     const badOrigin = await fetch(url, { headers: { Authorization: "Bearer interop-test-token", Origin: "https://evil.test" } });
     assert.equal(badOrigin.status, 403);
+    await checkDashboard(target, "http", dashboardDir, executable(target), environment(target), clients[0]);
     console.log(`${target.app}: official SDK HTTP checks passed with four concurrent clients`);
   } finally {
     await Promise.all(clients.map(client => client.close()));
     process.kill("SIGTERM");
     if (process.exitCode === null) await new Promise(resolve => process.once("exit", resolve));
   }
+}
+
+} finally {
+  rmSync(dashboardDir, { recursive: true, force: true });
 }

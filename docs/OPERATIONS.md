@@ -223,7 +223,13 @@ the pool and query path. No `/health`, `/metrics`, query audit log or query
 history API is provided. Logs use stderr at warning level; database failures
 returned to clients deliberately suppress SQL and failed-row values. Monitor
 process restarts, query error results, latency, pool pressure and database health
-through your external tooling.
+through your external tooling. For local inspection, enable `MCP_DASHBOARD=true`
+on the server and use the separate [status/watch CLI](DASHBOARD.md). Its private
+snapshots expose aggregate counters, cached resources and bounded health/pool
+samples without a new listener or a viewer database connection. Fresh heartbeat,
+health and resource ages are separate signals. A dead collector leaves stale
+data; restart the MCP server to resume collection. Normal EOF cleanup is best
+effort, so inspect stale instance files before removing them.
 
 Before upgrading, retain the previous built artifact and private configuration,
 fetch locked dependencies, rebuild both applications when core changes, and run

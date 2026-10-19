@@ -3,6 +3,8 @@ defmodule McpEx.Mysql do
   def dialect, do: :mysql
   def start_link(config), do: MyXQL.start_link(config.connection)
 
+  def pool_metrics(context), do: DBConnection.get_connection_metrics(context.pool)
+
   def execute(context, sql, values, :ddl) do
     # MySQL DDL implicitly commits; no transaction wrapper can make it rollback-safe.
     MyXQL.query(context.pool, sql, values, timeout: context.config.timeout)

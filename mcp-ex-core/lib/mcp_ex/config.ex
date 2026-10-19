@@ -54,6 +54,8 @@ defmodule McpEx.Config do
       http_ip: ip(get(env, "MCP_HTTP_HOST", "127.0.0.1")),
       http_port: number(env, "PORT", 3000, 65_535),
       origins: csv(env, "MCP_ALLOWED_ORIGINS"),
+      dashboard: boolean(env, "MCP_DASHBOARD"),
+      dashboard_dir: McpEx.Diagnostics.directory(env),
       max_bytes: number(env, "MCP_MAX_REQUEST_BYTES", 1_048_576)
     }
   end

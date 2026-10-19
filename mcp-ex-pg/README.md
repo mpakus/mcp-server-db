@@ -111,3 +111,13 @@ Endpoint: `http://127.0.0.1:3001/mcp`. Startup fails on connectivity errors.
 and run `MCP_INTEGRATION=true mix test` for disposable fixtures on port 15433.
 See [root verification](../README.md) for official SDK stdio/HTTP checks.
 [License](../LICENSE).
+
+
+## Dashboard
+
+Add `MCP_DASHBOARD=true` to the server environment and restart. From this
+application directory, run `./mcp-ex-pg status --watch` in another terminal.
+Use `status --json` for scripting or `resources --instance INSTANCE_ID` for
+cached resources. Inspection uses private snapshots and needs no database
+credentials. See the [dashboard guide and screenshot](../docs/DASHBOARD.md)
+for setup, metrics, exit codes and privacy limits.

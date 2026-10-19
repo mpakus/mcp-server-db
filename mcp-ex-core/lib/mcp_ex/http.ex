@@ -1,11 +1,17 @@
 defmodule McpEx.HTTP do
   @moduledoc "Authenticated, stateless MCP Streamable HTTP with JSON responses."
   import Plug.Conn
-  alias McpEx.Server
+  alias McpEx.{Diagnostics, Server}
 
   def init(context), do: context
 
   def call(conn, context) do
+    conn = do_call(conn, context)
+    Diagnostics.count(context, "http." <> to_string(conn.status))
+    conn
+  end
+
+  defp do_call(conn, context) do
     cond do
       conn.request_path != "/mcp" ->
         send_resp(conn, 404, "Not found")
@@ -52,15 +58,19 @@ defmodule McpEx.HTTP do
             end
 
           _ ->
+            Diagnostics.count(context, "parse_errors")
+
             conn
             |> put_resp_content_type("application/json")
             |> send_resp(400, Jason.encode!(Server.error(nil, -32700, "Invalid JSON")))
         end
 
       {:more, _, conn} ->
+        Diagnostics.count(context, "oversize_errors")
         reject(conn, 413, "Request too large")
 
       {:ok, _, conn} ->
+        Diagnostics.count(context, "oversize_errors")
         reject(conn, 413, "Request too large")
 
       {:error, _} ->
