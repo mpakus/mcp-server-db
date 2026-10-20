@@ -15,7 +15,8 @@ no Ecto layer, Phoenix application, web UI or custom database protocol.
 | [`redact.ex`](../mcp-ex-core/lib/mcp_ex/redact.ex) | Database value normalization, sensitive-name detection, recursive masks and metadata filtering |
 | [`server.ex`](../mcp-ex-core/lib/mcp_ex/server.ex) | JSON-RPC dispatch, initialization, tools, resources, result envelopes and safe errors |
 | [`cli.ex`](../mcp-ex-core/lib/mcp_ex/cli.ex) | Escript lifecycle, runtime startup/probe and transport choice |
-| [`runtime.ex`](../mcp-ex-core/lib/mcp_ex/runtime.ex) | Rest-for-one supervision of the pool, Registry, workers, sessions and HTTP listener |
+| [`runtime.ex`](../mcp-ex-core/lib/mcp_ex/runtime.ex) | Rest-for-one supervision of the pool, optional cache, Registry, workers, sessions and HTTP listener |
+| [`cache.ex`](../mcp-ex-core/lib/mcp_ex/cache.ex) | Optional bounded ETS query payload cache, monotonic expiry and write invalidation |
 | [`session.ex`](../mcp-ex-core/lib/mcp_ex/session.ex) | Per-session lifecycle, active request IDs, bounded workers, cancellation, deadlines and idle expiry |
 | [`stdio.ex`](../mcp-ex-core/lib/mcp_ex/stdio.ex) | Bounded raw input chunks, newline framing and one stdout writer |
 | [`diagnostics.ex`](../mcp-ex-core/lib/mcp_ex/diagnostics.ex) | Optional ETS counters, private snapshots and bounded samplers |
@@ -46,11 +47,14 @@ flowchart TD
   Worker --> Server["Shared JSON-RPC dispatcher"]
   Worker -->|"Result or DOWN"| Session
   Server --> Policy["SQL policy and permissions"]
-  Policy --> Adapter["MySQL or PostgreSQL adapter"]
+  Policy --> Cache["Optional ETS lookup for opted-in reads"]
+  Cache -->|"Miss or bypass"| Adapter["MySQL or PostgreSQL adapter"]
+  Cache -->|"Hit: cached masked payload"| Worker
   Adapter --> Pool["Driver pool and transaction"]
   Pool --> Database["Database"]
   Database --> Result["Driver result"]
   Result --> Redact["Normalization and PII masking"]
+  Redact -->|"Admit eligible payload"| Cache
   Redact --> Worker
   Session -->|"Response by request ID"| Client
 ```
@@ -61,7 +65,7 @@ validates configuration, starts `McpEx.Runtime` and probes its shared pool throu
 read-only execution path. Optional diagnostics starts after this probe, unlinked
 from the CLI owner, and monitors that owner for cleanup. The CLI then enters the stdio loop or starts Bandit with
 the context map as Plug options. The runtime uses `:rest_for_one` with the pool,
-Registry, Task.Supervisor, DynamicSupervisor and Bandit in dependency order.
+optional cache owner, Registry, Task.Supervisor, DynamicSupervisor and Bandit in dependency order.
 Replacing a dependency shuts down its dependent sessions and listener before
 restarting them. Pool references use a registered name so restarts do not leave
 stale PIDs in the context. Diagnostics remains an optional isolated observer.
@@ -90,9 +94,11 @@ port. EOF drains admitted work, including a final frame without a newline.
 HTTP disconnects do not end logical sessions; explicit DELETE and idle expiry do.
 Multiple stdio launches still have separate VMs and separate pools.
 
-For `tools/call`, the server validates the tool and arguments, checks policy,
-executes the classified mode, builds row maps, filters SQL column metadata when
-needed, applies normalization/masking and wraps JSON text plus timing text.
+For `tools/call`, the server validates the tool and arguments and checks policy.
+An opted-in read can reuse a cached JSON payload; otherwise it executes the
+classified mode, builds row maps, filters SQL column metadata when needed and
+applies normalization/masking. Each call builds its own response envelope,
+request ID and timing. Hits keep the usual session worker and response limits.
 Expected tool failures become `isError: true`; RPC dispatch errors use the
 JSON-RPC error envelope.
 
@@ -101,6 +107,29 @@ parameterized catalog queries, bypassing the user-SQL policy that would block
 catalog access in PII mode. It validates a table resource against the current
 table inventory before reading columns, applies column-name filtering and
 normalizes metadata. This path does not run the complete value-masking pass.
+
+## Cache ownership and invalidation
+
+`McpEx.Cache` owns a protected named ETS set with `read_concurrency: true`.
+Reads access ETS directly from query workers; a GenServer serializes admission,
+expiry cleanup and write invalidation. No SQL runs inside that GenServer.
+A metadata row records a unique generation and whether writes are active;
+entries use `{generation, SHA256(scope, SQL, params)}` keys and store expiry plus
+normalized/masked JSON. The generation is a fresh reference, including after
+restart, so pre-write or previous-owner fills cannot repopulate current entries.
+
+`Cache.with_write/2` fences permitted writes/DDL before adapter execution and
+invalidates again afterward. It monitors each writer and clears its fence on
+cancellation/crash. Multiple active writers keep the cache bypassed until the
+last exits. Full invalidation avoids pretending this SQL lexer tracks every
+view/function/trigger dependency. Read errors and ineligible fills are not stored.
+
+The pool precedes the cache in `:rest_for_one`: a pool restart clears cache and
+sessions; a cache crash clears entries and restarts dependent workers, sessions
+and listener while preserving the pool. Stdio sessions then close; HTTP clients
+reinitialize. There is no persistent/distributed cache or cross-instance
+invalidation. Runtime configuration is immutable. See
+[TTL, bounds and consistency limits](CONFIGURATION.md#optional-query-cache).
 
 ## Internal contracts
 
@@ -118,7 +147,7 @@ details out of the core.
 | `columns(context, schema, table)` | Returns a driver result with canonical lowercase column aliases in ordinal order |
 
 The request-handler context is `%{pool: pool, adapter: adapter_module, config: config}`
-with optional `diagnostics: %{pid: publisher, table: ets_table}`. Missing/disabled
+with optional `cache: cache_name_or_nil` and `diagnostics: %{pid: publisher, table: ets_table}`. Missing/disabled
 diagnostics are no-ops. Sampling contexts deliberately omit credentials, HTTP
 tokens and the diagnostics handle.
 Transport contexts additionally carry `registry`, `sessions` and `tasks`
@@ -299,3 +328,13 @@ DDL, mysql2 option aliases, durable sessions, prompts or OAuth service are suppl
 
 See [recorded test evidence](TESTING.md#recorded-evidence-and-limits) before
 claiming support for a new runtime, database version, TLS setup or socket path.
+
+## Performance regression measurements
+
+Use [STRESS.md](benchmarks/STRESS.md) and `test/cache-benchmark.mjs` for the current
+matched four-mode comparison. Its shared `test/stress.mjs` driver validates
+responses, records histograms/resources and owns server cleanup. The cache
+harness interleaves stdio, HTTP and their cached counterparts between rounds.
+Keep cold/opt-out probes separate from hot-hit summaries. Historical revision
+comparisons remain reproducible through the [benchmark index](benchmarks/README.md),
+but their values do not belong in the current README result table.

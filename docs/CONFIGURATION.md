@@ -195,6 +195,59 @@ instead of growing a work queue. These are not connection or request-rate limits
 apply those at the HTTP proxy. Stdio sessions live until EOF/owner exit and do not
 use the HTTP idle timer. Await each dependent write before issuing the next.
 
+## Optional query cache
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MCP_CACHE_ENABLED` | `false` | Enable the per-process SQL result cache; reads still require `cache: true` |
+| `MCP_CACHE_TTL_MS` | `5000` | Fixed TTL in milliseconds, 1–2147483647, starting before SQL execution |
+| `MCP_CACHE_MAX_ENTRIES` | `1000` | Maximum cached payloads, 1–100000 |
+| `MCP_CACHE_MAX_ENTRY_BYTES` | `65536` | Maximum encoded payload bytes per entry, 1–8388608 |
+
+Restart the server after changing these settings. All four are validated even
+when caching is disabled. Enable the feature in the process/client environment,
+then opt in on each suitable read with the boolean tool argument `cache: true`:
+
+```sh
+export MCP_CACHE_ENABLED=true
+export MCP_CACHE_TTL_MS=5000
+export MCP_CACHE_MAX_ENTRIES=1000
+export MCP_CACHE_MAX_ENTRY_BYTES=65536
+```
+
+This cache is shared by sessions within one server process, for both transports.
+It stores the normalized, PII-masked JSON payload when PII mode is enabled.
+Resource discovery remains live. Policy validation runs before every lookup.
+Keys include SQL, bound values, schema/dialect and redaction settings; request
+IDs and timing are generated per call. The configured database identity is fixed
+for the lifetime of its isolated runtime.
+
+TTL is fixed, not extended by hits. Expired entries are never served; a sweep
+reclaims them every 100–1000 ms. Slow reads that outlast TTL, oversized payloads,
+errors and new entries when full are not cached. The full cache keeps existing
+unexpired entries; it does not evict the least recently used entry. Concurrent
+misses may issue duplicate SQL. Defaults bound stored payloads to about 62.5 MiB
+plus ETS/key overhead; driver results, in-flight payloads and encoding memory
+are outside that bound.
+
+Writes/DDL through this server invalidate the entire cache before and after
+execution, including failures. Reads bypass it while a server write is active.
+External writes, database grant changes and writes from another server instance
+become visible when entries expire or the process restarts. Use `cache: false`
+(or omit it) whenever freshness is required, including time/random/session-sensitive
+functions. Cache opt-in does not certify that a read is deterministic or free of
+external side effects. Await dependent writes; cancellation does not prove that
+a database write has stopped or rolled back. This is a TTL cache, not a transaction
+consistency mechanism.
+
+Successful opted-in calls return `result._meta.cache`: `hit` reused a payload,
+`miss` executed SQL (admission is not guaranteed), `disabled` executed SQL because
+the feature is off, or `bypass` executed SQL because a write is active or the cache
+is unavailable. Calls without opt-in have no cache metadata. `cache: true` on a
+write is rejected. Hits report `Cache lookup time`; other calls report
+`Query execution time`. See [usage](USER-GUIDE.md#optional-cached-reads) and
+[current four-mode results](benchmarks/STRESS.md).
+
 ## Dashboard
 
 | Variable | Default | Meaning |

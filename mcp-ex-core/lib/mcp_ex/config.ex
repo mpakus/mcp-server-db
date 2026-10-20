@@ -56,6 +56,12 @@ defmodule McpEx.Config do
       origins: csv(env, "MCP_ALLOWED_ORIGINS"),
       dashboard: boolean(env, "MCP_DASHBOARD"),
       dashboard_dir: McpEx.Diagnostics.directory(env),
+      cache: %{
+        enabled: boolean(env, "MCP_CACHE_ENABLED"),
+        ttl: number(env, "MCP_CACHE_TTL_MS", 5000),
+        max_entries: number(env, "MCP_CACHE_MAX_ENTRIES", 1000, 100_000),
+        max_entry_bytes: number(env, "MCP_CACHE_MAX_ENTRY_BYTES", 65_536, 8_388_608)
+      },
       max_bytes: number(env, "MCP_MAX_REQUEST_BYTES", 1_048_576),
       max_response_bytes: number(env, "MCP_MAX_RESPONSE_BYTES", 8_388_608),
       max_sessions: number(env, "MCP_MAX_SESSIONS", 1000),

@@ -1,183 +1,190 @@
-# Local throughput stress test
+# Current four-mode stress benchmark
 
-For the subsequent output batching and request-ID indexing change, see the
-[fresh stdio/HTTP comparison](STDIO.md). The results below preserve the original
-measurement before that optimization.
-
-The 2026-10-20 run measures completed MCP SQL tool calls on this laptop, using
-the server code at `d69485f1788dea160f233f706c20588b0f95460a`. No application code
-or persisted server settings were changed. The [root README](../../README.md)
-summarizes the results. [Raw results](stress-2026-10-20.json) retain every phase,
-latency histogram, per-second success count, resource sample summary, environment,
-dependency version and source/build hash.
+Measured on 2026-10-20 from server commit `ae54325`, with the benchmark harness
+changes recorded by hash in [the raw results](stress-2026-10-20.json). This is
+the current comparison for both MySQL and PostgreSQL; it supersedes the earlier
+session, stdio-optimization and cache-only result tables.
 
 ## Results
 
-The final campaign completed 82 measured phases with **6,740,570 validated
-successful responses**, **1,202,096 separately counted busy replies**, and **zero
-unexpected query/protocol/result errors**. Deliberate over-cap sweeps account
-for most busy replies. PostgreSQL HTTP's 94-concurrency candidate produced one
-busy reply during confirmation and was rejected; 92 passed the complete check.
-The selected settings below completed 3,645,110 requests without any busy replies
-or errors across their twelve confirmation runs.
-
-| Server / transport | Pool / per-session limit | Concurrency | Median RPS | 30-second RPS range | p50 / p95 / p99 (ms) |
-| --- | ---: | ---: | ---: | --- | --- |
-| MySQL / stdio | 128 / 128 | 124 | 9,003 | 8,527–9,080 | 13.75 / 17.35 / 20.10 |
-| MySQL / HTTP | 128 / 128 | 124 | 12,963 | 12,919–12,985 | 9.35 / 12.65 / 15.60 |
-| PostgreSQL / stdio | 96 / 96 | 88 | 8,399 | 8,359–8,432 | 10.25 / 13.45 / 15.80 |
-| PostgreSQL / HTTP | 96 / 96 | 92 | 10,221 | 10,189–10,399 | 8.75 / 11.60 / 14.15 |
-
-The server's CPU is an average over the selected confirmation windows; RSS is
-the highest sampled value across those windows. 100% CPU equals one core.
-Generator CPU covers the Node process including its worker threads; utilization
-is the busiest generator event loop observed across the confirmations.
-
-| Server / transport | BEAM CPU | BEAM sampled peak RSS (MiB) | Generator CPU | Busiest generator event loop |
+| Engine | stdio RPS | HTTP RPS | stdio + cache RPS | HTTP + cache RPS |
 | --- | ---: | ---: | ---: | ---: |
-| MySQL / stdio | 555.44% | 159.92 | 24.76% | 33% |
-| MySQL / HTTP | 542.20% | 192.27 | 69.44% | 22% |
-| PostgreSQL / stdio | 569.02% | 147.92 | 23.72% | 32% |
-| PostgreSQL / HTTP | 546.03% | 168.67 | 60.50% | 20% |
+| MySQL | **9,210** | **9,192** | **63,938** | **88,063** |
+| PostgreSQL | **7,948** | **7,982** | **63,793** | **87,865** |
 
-The generator had substantial headroom at the selected settings. These metrics
-do not isolate whether the server, Docker networking or database is the ultimate
-bottleneck, and they do not include database/VM CPU or memory.
+All **64 measured phases** completed **23,155,439 validated responses**, with
+**zero errors and zero busy replies**. The 24 confirmation runs account for
+20,078,333 responses. Values above are medians of three 20-second samples per
+engine/mode; percentiles below merge the same samples.
 
-| Server / transport | Best default-limit sweep RPS (5 s) | Default concurrency | Lookup RPS at selected settings (15 s) | Lookup p99 (ms) |
+| Engine / mode | RPS range | p50 / p95 / p99 (ms) | Hit rate | SQL read executions/sec |
+| --- | --- | --- | ---: | ---: |
+| MySQL / stdio | 9,207–9,222 | 6.80 / 8.95 / 10.70 | — | 9,213.13 |
+| MySQL / HTTP | 9,177–9,272 | 6.80 / 9.00 / 11.55 | — | 9,213.47 |
+| MySQL / stdio + cache | 63,236–64,822 | 1.00 / 1.35 / 1.70 | 99.980% | 12.80 |
+| MySQL / HTTP + cache | 86,620–88,742 | 0.75 / 0.95 / 1.05 | 99.985% | 12.80 |
+| PostgreSQL / stdio | 7,942–8,017 | 7.90 / 10.20 / 12.35 | — | 7,969.04 |
+| PostgreSQL / HTTP | 7,962–8,005 | 7.90 / 10.20 / 11.95 | — | 7,983.24 |
+| PostgreSQL / stdio + cache | 55,680–64,030 | 1.00 / 1.45 / 1.70 | 99.979% | 12.80 |
+| PostgreSQL / HTTP + cache | 84,927–88,999 | 0.75 / 0.95 / 1.05 | 99.985% | 12.80 |
+
+| Engine / mode | Server CPU | Server peak RSS (MiB) | Generator CPU | Busiest generator event loop |
 | --- | ---: | ---: | ---: | ---: |
-| MySQL / stdio | 2,685 | 4 | 8,820 | 20.00 |
-| MySQL / HTTP | 3,684 | 8 | 12,646 | 16.25 |
-| PostgreSQL / stdio | 2,324 | 4 | 8,174 | 16.15 |
-| PostgreSQL / HTTP | 3,187 | 8 | 10,154 | 13.65 |
+| MySQL / stdio | 540.61% | 166.66 | 15.28% | 19% |
+| MySQL / HTTP | 536.76% | 184.66 | 63.79% | 19% |
+| MySQL / stdio + cache | 260.14% | 140.94 | 17.63% | 17% |
+| MySQL / HTTP + cache | 1088.01% | 161.36 | 301.08% | 82% |
+| PostgreSQL / stdio | 554.70% | 138.88 | 15.03% | 18% |
+| PostgreSQL / HTTP | 565.09% | 152.36 | 59.41% | 17% |
+| PostgreSQL / stdio + cache | 233.29% | 123.20 | 14.42% | 16% |
+| PostgreSQL / HTTP + cache | 1118.19% | 134.34 | 298.84% | 82% |
 
-Default-limit values are exploratory five-second samples, not independently
-confirmed 90-second capacity figures. The lookup is a bound read from a one-row,
-in-memory fixture, not a representative production dataset. Startup, session
-initialization and warm-up are excluded from all throughput figures.
+CPU figures average the confirmation windows; 100% CPU is one core. RSS is the
+highest sampled process value across those windows. Database/VM resources are
+excluded. Cached headline RPS mostly reuses payloads; compare the SQL-read column
+when assessing database load.
+
+### Cold-cache and opt-out probes
+
+| Engine / transport | All-miss cache RPS | Enabled cache, no opt-in RPS |
+| --- | ---: | ---: |
+| MySQL / stdio | 8,570 | 9,138 |
+| MySQL / HTTP | 8,408 | 9,355 |
+| PostgreSQL / stdio | 7,731 | 7,943 |
+| PostgreSQL / HTTP | 7,457 | 7,924 |
+
+These are single ten-second samples. Cold calls all missed; calls without opt-in
+returned no cache metadata. Their SQL/payload differences and short duration do
+not establish an isolated overhead percentage.
+
+## Configuration and workload
+
+| Mode | Transport | Server cache | Tool argument | Sessions / generator threads |
+| --- | --- | --- | --- | --- |
+| stdio | Newline-delimited JSON-RPC over pipes | Disabled | `cache` omitted | 1 / 1 |
+| HTTP | Authenticated HTTP/1.1 keep-alive | Disabled | `cache` omitted | 4 / 4 |
+| stdio + cache | Same stdio transport | Enabled | `cache: true` | 1 / 1 |
+| HTTP + cache | Same HTTP transport | Enabled | `cache: true` | 4 / 4 |
+
+All four modes use `SELECT id, label FROM users WHERE id = ?` (PostgreSQL `$1`),
+bound to 1, against the same tiny disposable fixture. Every successful response
+must have its expected JSON-RPC ID, exactly one row, ID 1 and label `sample`.
+Policy, session tasks, transport, encoding and client validation are included.
+Uncached calls execute a native read-only transaction and rollback. Cache hits
+reuse the final JSON payload and avoid those database operations.
+
+Total confirmation concurrency is **64** in every mode. MySQL pool/global worker
+cap/per-session limit is 128; PostgreSQL is 96. HTTP divides the 64 requests
+among four sessions, while stdio uses one. These are temporary benchmark
+settings, not application defaults (pool 10, per-session limit 4).
+
+Cache settings are explicitly fixed at TTL **5000 ms**, **1000 entries** and
+**65536 payload bytes per entry**. Hits do not extend TTL. Warmed cache runs still
+refresh during each 20-second confirmation, and simultaneous misses can execute
+duplicate SQL. The measured hit/miss counts are retained in the raw artifact.
+
+The client, server and Docker databases share one laptop. One MCP server runs
+at a time; both fixture databases remain running. Dashboard and PII are disabled
+for timing. HTTP uses loopback without TLS; database TCP uses Docker's loopback
+port mapping. No application databases or writes are used by this benchmark.
+
+## Method
+
+The [four-mode harness](../../test/cache-benchmark.mjs) reuses the transport and
+metric implementation in [stress.mjs](../../test/stress.mjs):
+
+1. Build both escripts with `MIX_ENV=dev`, start disposable fixtures, and run the
+   smoke check to exercise every mode and probe.
+2. For each engine/mode, warm for two seconds and sweep concurrency 1, 4, 16 and
+   64 for three seconds each. These exploratory samples are not headline rates.
+3. Confirm each mode in three independent 20-second runs at concurrency 64, with
+   a fresh server and two-second warm-up for each run. Interleave all four modes
+   within each round and reverse their order in the next round.
+4. Run ten-second probes per engine/transport: unique-key cache misses (`cold`)
+   and enabled cache with `cache` omitted (`bypass`). The cold probe varies a
+   second bound predicate that preserves the row and uses a fresh per-generator
+   SQL comment. It exercises admission, capacity and expiration without hits.
+5. Validate every response. Any busy reply or query/protocol/result error fails
+   this comparison. Cache runs require at least 95% hits; cold probes require
+   every successful response to be a miss. Uncached responses must have no cache
+   metadata.
+
+The fixed 64-request setting makes the four modes comparable. This run does
+not select a separate best concurrency for each mode or test overload, and it
+does not establish an absolute maximum RPS. The older standalone `stress.mjs`
+sweep remains available for exploring pool limits and deliberate overload, but
+its `SELECT 1` workload produces a different experiment.
+
+## Metrics and interpretation
+
+- **RPS:** validated successful responses divided by actual elapsed time,
+  including draining the final requests. Startup, initialization and warm-up
+  are excluded. The headline is the median of the three confirmations.
+- **Latency:** successful round trips, including result validation. p50/p95/p99
+  merge all three 0.05 ms upper-bound histograms, rather than averaging percentiles.
+- **CPU:** BEAM process CPU time from `ps`, divided by wall time; 100% is one
+  core. Generator CPU includes its Node worker threads. Database/VM CPU is excluded.
+- **Memory:** highest process RSS sampled at start/end and one-second intervals;
+  this is not an instantaneous peak or total server-plus-database memory.
+- **Cache:** hit percentages and SQL read execution rates derive from validated
+  `result._meta.cache` statuses (or successful uncached responses). These count
+  read executions, not transaction-control statements or database-side telemetry.
+  High cached RPS is mostly payload reuse, not improved database execution capacity.
+- **Load shape:** closed-loop clients issue their next request after a response.
+  This can understate queueing compared with an external fixed arrival rate.
+  A partial final per-second bin includes request drain, not a throughput collapse.
+
+HTTP uses four sessions/generator threads while stdio uses one, so cross-transport
+figures do not isolate transport overhead alone. Generator utilization and CPU
+are included to show potential client limits. The one-row hot fixture does not
+represent large results, expensive SQL, writes, production networks, TLS, PII,
+dashboard overhead or thousands of sessions. Cold/bypass probes are single short
+samples and cannot establish small regressions statistically; cold SQL also has
+an extra predicate/parameter. A one-key hot cache does not measure full-cache
+memory usage. Power, temperature and other laptop workloads can affect results.
 
 ## Machine and software
 
 | Component | Recorded value |
 | --- | --- |
-| Laptop | MacBook Pro, model `Mac17,6`, connected to AC power |
-| Chip | Apple M5 Max, arm64, 18 physical/logical CPU cores |
-| CPU groups reported by macOS | 6 Super cores and 12 Performance cores |
-| Memory | 64 GiB unified memory |
-| GPU | Apple M5 Max, 40 cores, Metal 4; unused by this test |
-| SSD | APPLE SSD AP2048Z, 2 TB; database fixtures use tmpfs |
+| Laptop | MacBook Pro `Mac17,6`, AC power |
+| CPU / memory | Apple M5 Max, 18 physical/logical cores, arm64, 64 GiB RAM |
 | OS | macOS 27.0.1, build 26A434 |
 | Elixir | 1.20.4, compiled for OTP 28 |
 | Erlang/OTP | 28.5, ERTS 16.4, JIT, 18 online schedulers |
-| MySQL | 8.4.11, Docker image `mysql:8.4` |
-| PostgreSQL | 16.15, aarch64, Docker image `postgres:16-alpine` |
-| Docker | Desktop 4.92.0; Engine 29.8.0; LinuxKit 7.0.12 |
-| Docker VM allocation | 18 CPUs, 8,317,267,968 bytes RAM (about 7.75 GiB) |
-| Load generator | Node.js 26.8.2; no additional packages |
-| Drivers | MyXQL 0.9.0, Postgrex 0.22.4, DBConnection 2.10.2 |
+| MySQL | 8.4.11; Docker `mysql:8.4` |
+| PostgreSQL | 16.15, aarch64; Docker `postgres:16-alpine` |
+| Drivers / pool | MyXQL 0.9.0, Postgrex 0.22.4, DBConnection 2.10.2 |
 | HTTP stack | Bandit 1.13.1, Plug 1.20.3 |
+| Docker | Engine 29.8.0, LinuxKit 7.0.12; VM 18 CPUs, 8,317,267,968 bytes RAM (about 7.75 GiB) |
+| Generator | Node.js 26.8.2 |
+| Build / source | `MIX_ENV=dev`, server `ae54325`, locked dependencies, updated harness hashes in artifact |
 
-Hardware details are filtered to benchmark-relevant properties. Machine serial
-numbers, hardware UUIDs, hostnames and network identifiers are not recorded.
-
-## Method
-
-The [harness](../../test/stress.mjs) starts one MCP server process at a time,
-against the disposable [`compose.test.yml`](../../compose.test.yml) databases.
-Both databases remain running; only the selected database receives load.
-Escripts are built with `MIX_ENV=dev`, matching the documented build procedure.
-Dashboard and PII redaction are disabled. HTTP uses authenticated HTTP/1.1
-keep-alive over loopback without TLS. Database connections use TCP through
-Docker's loopback port mapping.
-
-1. Initialize sessions and warm up for two seconds.
-2. Sweep the default configuration (pool 10, per-session limit 4) at 1, 4, 8 and
-   16 outstanding requests, five seconds per level.
-3. Sweep a temporary expanded configuration, five seconds per level. MySQL uses
-   pool/per-session limit 128 and concurrency 1, 4, 8, 16, 32, 64, 80, 96, 112,
-   124, 128 and 256. PostgreSQL uses pool/per-session limit 96 and concurrency
-   1, 4, 8, 16, 32, 64, 80, 88, 92, 94, 96 and 192. Existing database connection
-   limits remain unchanged: MySQL 151 and PostgreSQL 100.
-4. Choose the highest successful RPS among levels with zero errors and zero
-   overload rejections, below the global worker/pool cap to leave headroom.
-   Restart that configuration, warm up, and confirm it in three consecutive
-   30-second runs. A busy response rejects the candidate and tries the next best
-   eligible setting; a query/result validation error fails the harness.
-5. At the same settings, run a 15-second bound primary-key lookup against the
-   fixture's one-row `users` table. Check that the returned ID and label match.
-
-An initial pool-64 MySQL stdio run reached about 8,700 successful RPS, but its
-second 30-second full-cap confirmation returned one busy response. That sample
-is retained as exploratory evidence. Further pool-64 probes showed rising
-throughput without saturating the client, motivating the wider final sweep.
-The headline results use the final campaign and leave worker headroom.
-
-Stdio uses one session and one generator thread. HTTP uses four sessions and
-four Node worker threads, with total concurrency divided evenly among them.
-The reported concurrency is the total across all sessions, not per session.
-Each client lane sends its next request after the previous response. This is
-a closed-loop test, not a fixed arrival-rate/open-loop test. Busy requests are
-counted separately and are not retried; the lane immediately submits its next
-new request. Consequently overload sweeps can produce many cheap rejections.
-
-The main workload is `SELECT 1 AS value`. Every successful response must contain
-exactly one row with value 1. The lookup is `SELECT id, label FROM users WHERE
-id = ?` for MySQL and `$1` for PostgreSQL, bound to 1. These calls include MCP
-decoding, SQL policy, task/session messaging, pool checkout, the database's
-read-only transaction and rollback, result encoding and client validation.
-One MCP request includes multiple database wire operations; RPS is not raw SQL
-statements per second. No writes or application databases are involved.
-
-## Metrics and interpretation
-
-- **Successful RPS:** validated successful responses divided by actual phase
-  elapsed time, including draining the last in-flight requests. Startup,
-  initialization and warm-up are excluded. Rejections and errors never count.
-- **Confirmed throughput:** median RPS of the three confirmation runs. Their
-  individual range shows short-run variability. This is the highest tested
-  error-free configuration selected by the sweep, not a proven hardware maximum.
-- **Latency:** successful request round trips, including client result validation.
-  Histograms use 0.05 ms upper-bound buckets; p50/p95/p99 use nearest ranks.
-  Percentiles combine requests, not averages of per-worker percentiles.
-- **Server CPU:** change in the BEAM process's cumulative CPU time from `ps`,
-  divided by wall time. 100% means one CPU core. Database/VM CPU is excluded.
-- **Server memory:** highest RSS observed at phase start/end and one-second
-  intervals. This is sampled process RSS, not a guaranteed instantaneous peak
-  or total memory of the server plus database.
-- **Generator:** process CPU/RSS, worker event-loop utilization and p99 event-loop
-  delay are recorded to help identify client limits. Idle workers report null.
-- **Per-second counts:** the last bin can be a partial second caused by drain;
-  do not interpret that partial bin as a throughput collapse.
-
-The read-only fixture is tiny and hot in memory. This does not establish capacity
-for large results, complex SQL, writes, disk-bound data, production networks,
-TLS, PII filtering, dashboards or thousands of sessions. Latencies describe the
-closed-loop workload and can understate queueing under an external fixed arrival
-rate. The laptop runs the client, BEAM and Docker together; other applications,
-power/thermal conditions and Docker allocation can change results. The run does
-not isolate the ultimate bottleneck or exhaust every pool/scheduler setting.
+Hardware metadata excludes serial numbers, hardware UUIDs, hostnames and network
+identifiers. The artifact records exact Docker image digests and source/build
+hashes, since tags and dependencies may change in future runs.
 
 ## Reproduce
 
-Use the pinned Erlang/Elixir from `.tool-versions`, Node and Docker. Fetch Mix
-dependencies as described in the root README first. Run from the repository root
-with fixture ports 13307/15433 and MCP ports 13107/13108 available. This command
-owns and removes the disposable Compose fixtures on exit. Allow roughly twelve
-to fifteen minutes for the full run, plus builds and database startup.
+Install the pinned Erlang/Elixir from `.tool-versions`, Mix dependencies, Node and
+Docker as described in the root README. Use free database ports 13307/15433 and
+MCP ports 13107/13108. Run from the repository root. This command owns and removes
+the disposable fixture containers on exit; allow about twelve minutes for the
+full measurement, plus builds/startup.
 
 ```sh
 (
   set -eu
   trap 'docker compose -f compose.test.yml down' EXIT
-  (cd mcp-ex-mysql && MIX_ENV=dev mix escript.build)
-  (cd mcp-ex-pg && MIX_ENV=dev mix escript.build)
-  docker compose -f compose.test.yml up -d --wait
-  STRESS_SMOKE=true node test/stress.mjs > stress-smoke.jsonl
-  node test/stress.mjs > stress-results.jsonl
+  (cd mcp-ex-mysql && MIX_ENV=dev rtk proxy mix escript.build)
+  (cd mcp-ex-pg && MIX_ENV=dev rtk proxy mix escript.build)
+  rtk proxy docker compose -f compose.test.yml up -d --wait
+  CACHE_BENCH_SMOKE=true rtk proxy node test/cache-benchmark.mjs > four-mode-smoke.jsonl
+  rtk proxy node test/cache-benchmark.mjs > four-mode-results.jsonl
 )
 ```
 
-For a focused rerun, set `STRESS_APPS=mysql` or `STRESS_APPS=pg` and/or
-`STRESS_TRANSPORTS=stdio` or `STRESS_TRANSPORTS=http`. Progress goes to stderr;
-stdout contains one JSON record per measured phase. The raw artifact records
-the exact image digests because Docker tags may change on a future run.
+Progress goes to stderr; stdout is one JSON record per phase. Restrict a rerun
+with `CACHE_BENCH_APPS=mysql` or `pg`, and/or `CACHE_BENCH_TRANSPORTS=stdio` or
+`http`. Smoke uses one 0.3-second run per mode at concurrency 4 and must not be
+reported as sustained capacity. Published summaries use the full campaign.

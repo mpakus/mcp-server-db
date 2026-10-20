@@ -1,6 +1,6 @@
 defmodule McpEx.Server do
   @moduledoc "The database MCP request handlers, shared by stdio and HTTP sessions."
-  alias McpEx.{Config, Diagnostics, Policy, Redact}
+  alias McpEx.{Cache, Config, Diagnostics, Policy, Redact}
   @versions ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
   def versions, do: @versions
 
@@ -97,6 +97,12 @@ defmodule McpEx.Server do
             "type" => "object",
             "properties" => %{
               "sql" => %{"type" => "string", "description" => "SQL statement"},
+              "cache" => %{
+                "type" => "boolean",
+                "default" => false,
+                "description" =>
+                  "Opt into TTL reuse for this read when MCP_CACHE_ENABLED=true; use only for reads that may be stale."
+              },
               "params" => %{
                 "type" => "array",
                 "description" => "Bound values: ? for MySQL, $1/$2 for PostgreSQL",
@@ -122,61 +128,50 @@ defmodule McpEx.Server do
 
     Diagnostics.tool(context, fn ->
       try do
-        {sql, values} =
+        {sql, values, cache?} =
           Diagnostics.step(context, "validation_errors", fn ->
             arguments = params["arguments"]
             unless is_map(arguments), do: raise(ArgumentError, "arguments must be an object")
 
-            if Enum.any?(Map.keys(arguments), &(&1 not in ["sql", "params"])),
+            if Enum.any?(Map.keys(arguments), &(&1 not in ["sql", "params", "cache"])),
               do: raise(ArgumentError, "Unknown tool argument")
 
             values = Map.get(arguments, "params", [])
             unless is_list(values), do: raise(ArgumentError, "params must be an array")
             unless is_binary(arguments["sql"]), do: raise(ArgumentError, "sql must be a string")
-            {arguments["sql"], values}
+            cache? = Map.get(arguments, "cache", false)
+            unless is_boolean(cache?), do: raise(ArgumentError, "cache must be a boolean")
+            {arguments["sql"], values, cache?}
           end)
 
         policy =
           Diagnostics.step(context, "policy_rejections", fn ->
-            Policy.check(sql, context.config)
+            policy = Policy.check(sql, context.config)
+
+            if cache? and policy.mode != :read,
+              do: raise(ArgumentError, "cache is only valid for read queries")
+
+            policy
           end)
 
-        Diagnostics.count(context, "queries_" <> to_string(policy.mode))
         start = System.monotonic_time(:microsecond)
+        execute = fn -> query_payload(context, sql, values, policy) end
 
-        result =
-          Diagnostics.step(context, "database_failures", fn ->
-            execute!(context, sql, values, policy.mode)
-          end)
+        {payload, status} =
+          if cache?, do: Cache.fetch(context, sql, values, execute), else: {execute.(), :bypass}
 
-        Diagnostics.step(context, "processing_failures", fn ->
-          rows = rows(result)
+        if cache?, do: Diagnostics.count(context, "cache_" <> Atom.to_string(status))
+        elapsed = (System.monotonic_time(:microsecond) - start) / 1000
+        label = if status == :hit, do: "Cache lookup time", else: "Query execution time"
 
-          rows =
-            if policy.introspection == :columns and context.config.pii and
-                 not context.config.pii_introspection,
-               do: Redact.filter_introspection(rows, context.config),
-               else: rows
+        result = %{
+          "content" => [text(payload), text("#{label}: #{Float.round(elapsed, 2)} ms")],
+          "isError" => false
+        }
 
-          payload =
-            if is_nil(result.columns),
-              do: %{
-                "affectedRows" => result.num_rows,
-                "insertId" => Map.get(result, :last_insert_id)
-              },
-              else: rows
-
-          payload = Redact.apply(payload, context.config)
-          elapsed = (System.monotonic_time(:microsecond) - start) / 1000
-
-          %{
-            "content" => [
-              text(Jason.encode!(payload)),
-              text("Query execution time: #{Float.round(elapsed, 2)} ms")
-            ],
-            "isError" => false
-          }
-        end)
+        if cache?,
+          do: Map.put(result, "_meta", %{"cache" => Atom.to_string(status)}),
+          else: result
       rescue
         error ->
           %{
@@ -264,12 +259,42 @@ defmodule McpEx.Server do
   defp dispatch("resources/read", _, _), do: raise(ArgumentError, "uri must be a string")
   defp dispatch(_, _, _), do: throw({:rpc, -32601, "Method not found"})
 
+  defp query_payload(context, sql, values, policy) do
+    Diagnostics.count(context, "queries_" <> to_string(policy.mode))
+
+    result =
+      Diagnostics.step(context, "database_failures", fn ->
+        execute!(context, sql, values, policy.mode)
+      end)
+
+    Diagnostics.step(context, "processing_failures", fn ->
+      rows = rows(result)
+
+      rows =
+        if policy.introspection == :columns and context.config.pii and
+             not context.config.pii_introspection,
+           do: Redact.filter_introspection(rows, context.config),
+           else: rows
+
+      payload =
+        if is_nil(result.columns),
+          do: %{"affectedRows" => result.num_rows, "insertId" => Map.get(result, :last_insert_id)},
+          else: rows
+
+      payload |> Redact.apply(context.config) |> Jason.encode!()
+    end)
+  end
+
   def execute!(context, sql, params, mode) do
-    case context.adapter.execute(context, sql, params, mode) do
-      {:ok, result} -> result
-      {:error, error} when is_exception(error) -> raise error
-      {:error, _} -> raise RuntimeError, "Database operation failed"
+    execute = fn ->
+      case context.adapter.execute(context, sql, params, mode) do
+        {:ok, result} -> result
+        {:error, error} when is_exception(error) -> raise error
+        {:error, _} -> raise RuntimeError, "Database operation failed"
+      end
     end
+
+    if mode == :read, do: execute.(), else: Cache.with_write(context, execute)
   end
 
   def rows(%{columns: nil}), do: []

@@ -87,6 +87,24 @@ defmodule McpEx.DiagnosticsTest do
     assert Diagnostics.count(context, "requests") == :ok
   end
 
+  test "cache hits remain tool calls but do not inflate database query counts", %{
+    context: context,
+    dir: dir
+  } do
+    config = %{context.config | cache: %{context.config.cache | enabled: true}}
+    start_supervised!({McpEx.Cache, {__MODULE__, config.cache}})
+    ctx = start(Map.put(%{context | config: config}, :cache, __MODULE__))
+    args = %{"sql" => "SELECT 1", "cache" => true, "params" => ["private-cache-parameter"]}
+    tool(ctx, args)
+    tool(ctx, args)
+    tool(%{ctx | cache: nil}, args)
+    McpEx.Cache.with_write(ctx, fn -> tool(ctx, args) end)
+    counters = snapshot(dir, &(&1["counters"]["tool_success"] == 4))["counters"]
+    assert counters["queries_read"] == 3
+    for status <- ~w(hit miss disabled bypass), do: assert(counters["cache_" <> status] == 1)
+    refute Jason.encode!(snapshot(dir)) =~ "private-cache-parameter"
+  end
+
   test "counters distinguish tool, RPC and policy outcomes without retaining data", %{
     context: context,
     dir: dir

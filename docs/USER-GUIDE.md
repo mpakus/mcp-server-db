@@ -144,6 +144,7 @@ Use `tools/list` to discover `mysql_query` or `pg_query`. Both accept:
 | --- | --- | --- |
 | `sql` | Yes | One nonempty SQL statement |
 | `params` | No | Array of bound values; defaults to `[]` |
+| `cache` | No | Boolean, default `false`; opt into TTL reuse when enabled on the server |
 
 Additional argument keys are rejected. Parameters bind values, not SQL
 identifiers. Use `?` placeholders for MySQL and `$1`, `$2`, etc. for PostgreSQL.
@@ -190,6 +191,28 @@ inside read-only transactions and are rolled back after obtaining the result.
 Do not send `BEGIN`, `COMMIT`, `USE` or `SET search_path`; calls do not share a
 transaction or current-database state. SQL support and write examples are in
 [Security and SQL policy](SECURITY.md#supported-sql).
+
+## Optional cached reads
+
+Set `MCP_CACHE_ENABLED=true` in the server's launch environment and restart it.
+Then add `"cache": true` to a read whose result may be reused for the configured
+TTL (default five seconds):
+
+```json
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"mysql_query","arguments":{"sql":"SELECT id, label FROM users WHERE id = ?","params":[1],"cache":true}}}
+```
+
+For PostgreSQL use `pg_query` and `$1`. A first call normally returns
+`result._meta.cache: "miss"`; a repeated call can return `"hit"` without SQL.
+The first content item keeps the same JSON data shape, and a hit's second item
+reports `Cache lookup time`. An opted-in call with caching disabled returns
+`"disabled"`. Active server writes cause `"bypass"`. Omit `cache` or use `false`
+to always execute SQL; a write with `cache: true` is rejected.
+
+The cache spans HTTP sessions in one instance. A write through that instance
+invalidates its entries; writes elsewhere rely on TTL. Avoid caching reads
+that need immediate freshness, current timestamps, randomness or session state.
+Resource discovery is uncached. See [all settings and consistency limits](CONFIGURATION.md#optional-query-cache).
 
 ## Read tool results
 

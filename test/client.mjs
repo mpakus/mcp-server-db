@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkDashboard } from "./dashboard.mjs";
 import { checkSessionStdio, checkSessionHttp } from "./sessions.mjs";
+import { checkCache } from "./cache.mjs";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -128,6 +129,7 @@ for (const target of targets) {
     process.kill("SIGTERM");
     if (process.exitCode === null) await new Promise(resolve => process.once("exit", resolve));
   }
+  await checkCache(target, executable(target), environment(target));
 }
 
 } finally {

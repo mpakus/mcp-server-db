@@ -260,3 +260,12 @@ After a timeout/disconnect during a write, determine whether it committed before
 retrying. Shut down the process manager/client before removing credentials or
 artifacts. Dispose of test containers with the test Compose project, keeping
 application databases separate.
+
+## Capacity and cache tuning
+
+Use the [current four-mode benchmark](benchmarks/STRESS.md) as a reproducible
+local comparison for stdio, HTTP and optional caching. Its pool/worker sizes are
+benchmark overrides, not production recommendations. Size deployment limits
+against the actual query mix, result sizes, database capacity and network.
+Cache gains require repeatable reads within TTL; external writes are visible
+only after expiry or a fresh uncached query. See [cache settings](CONFIGURATION.md#optional-query-cache).

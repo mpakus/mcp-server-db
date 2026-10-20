@@ -260,3 +260,21 @@ schema validation apply to readers as well as writers. Terminal output escapes
 control characters from metadata. JSON output remains machine-readable escaped
 JSON. Use the same OS account, a private directory and local storage; do not
 serve snapshot files from a web root or relax permissions to share them.
+
+## Optional cache and freshness
+
+The [query cache](CONFIGURATION.md#optional-query-cache) is off by default and
+requires a per-read opt-in. Authentication, SQL policy, PII guards and response
+limits still apply on hits. Entries hold the final normalized/masked payload,
+with hashed SQL/parameter keys; those hashes are not encryption. With PII mode
+off, cached values can contain sensitive data. Cache contents stay in the BEAM
+instance's memory and are not written to diagnostic snapshots.
+
+Clients using one instance share its configured database identity and cache;
+there is no per-user database identity or tenant isolation within that instance.
+Use separate instances for separate access scopes. External data/grant changes
+are not rechecked by a hit before TTL expiry. Use uncached calls for freshness
+or permission-revocation-sensitive reads and restart the instance to clear all
+entries immediately. Writes/DDL through the instance invalidate before/after;
+cancellation cannot guarantee a write has finished at the database. Caching is
+not an authorization boundary or a cross-process consistency mechanism.

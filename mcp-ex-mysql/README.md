@@ -116,3 +116,20 @@ Use `status --json` for scripting or `resources --instance INSTANCE_ID` for
 cached resources. Inspection uses private snapshots and needs no database
 credentials. See the [dashboard guide and screenshot](../docs/DASHBOARD.md)
 for setup, metrics, exit codes and privacy limits.
+
+## Current performance measurements
+
+The [four-mode stress report](../docs/benchmarks/STRESS.md) compares stdio, HTTP,
+stdio + cache and HTTP + cache using the same fixture query and total concurrency.
+It includes RPS, latency, CPU/RSS, cache-hit counts, machine/software versions and
+reproduction commands. Cached RPS mostly reuses results; it is not database-query
+throughput. See [cache configuration](../docs/CONFIGURATION.md#optional-query-cache)
+for opt-in and freshness rules.
+
+## License and author
+
+Copyright © 2026 Renat "MpaK" Ibragimov — [aomega.co](https://aomega.co).
+Free permitted use is under [PolyForm Noncommercial](../LICENSE); commercial
+projects outside its permitted purposes require a paid license from the author.
+See [licensing details](../docs/LICENSING.md) and
+[third-party notices](../THIRD-PARTY-NOTICES.md).

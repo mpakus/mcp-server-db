@@ -101,6 +101,7 @@ session identities or SQL.
 | Tools | Completed calls to the known SQL tool, success/failure totals and elapsed average/max |
 | Failures | Tool argument validation, policy rejection, driver operation failure, or result-processing failure |
 | Query attempts | Read/write/DDL driver calls after successful policy validation; neither executed statements nor committed writes are guaranteed |
+| Cache (JSON counters) | `cache_hit`, `cache_miss`, `cache_bypass`, `cache_disabled` count successful opted-in tool calls; misses may be ineligible for storage |
 | Rate | Change in query attempts divided by change in sampled monotonic uptime for the same instance; first sample, unchanged uptime or counter reset is unknown |
 | Transport | JSON parse/oversize failures and rejected HTTP status totals; HTTP status counters also appear individually in JSON |
 | BEAM | Whole server VM memory and process count, including driver/library processes |
@@ -112,7 +113,9 @@ query execution time. Unknown tool names are RPC errors and do not count as
 known SQL-tool calls. Invalid SQL types are validation failures; SQL rejected
 by policy is a policy failure. Counts are sampled independently and may briefly
 show an operation in progress. Internal startup, health probes and inventory
-sampling are excluded from client counters. Resource reads are RPC activity,
+sampling are excluded from client counters. Query-attempt counters and their
+rate exclude cache hits; tool/RPC totals include them. Cache counters expose no
+SQL, bound parameters or cached payloads. Resource reads are RPC activity,
 not SQL-tool attempts. No SQL, bound parameters, result values, raw error text,
 column metadata/defaults, credentials, bearer tokens or client IDs are retained.
 Resource names/URIs and database topology are intentionally visible.

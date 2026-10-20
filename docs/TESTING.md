@@ -34,8 +34,8 @@ From the workspace root:
 
 Ensure `MCP_INTEGRATION` is unset or `false` for the default check. Both adapters'
 test helpers exclude tests tagged `:integration` unless that variable is exactly
-`true`. The current suite contains 12 core tests, one non-integration MySQL test
-and one non-integration PostgreSQL test: 14 executed tests in total, with two
+`true`. The current suite contains 47 core tests, one non-integration MySQL test
+and one non-integration PostgreSQL test: 49 executed tests in total, with two
 database tests excluded. Counts are a description of this checkout, not a
 substitute for checking the actual output.
 
@@ -67,8 +67,8 @@ the test Compose project even if a check fails:
 
 The database integration tests insert/delete fixture rows, create/drop test
 tables and exercise failure/rollback paths. Use the supplied disposable
-fixtures, never application databases. The current full run executes 12 core,
-2 MySQL and 2 PostgreSQL ExUnit tests (16 total), then the official MCP SDK
+fixtures, never application databases. The current full run executes 47 core,
+2 MySQL and 2 PostgreSQL ExUnit tests (51 total), then the official MCP SDK
 script over both stdio and HTTP, plus raw escript timeout/framing checks. It also
 rebuilds the escripts before SDK use.
 
@@ -102,8 +102,9 @@ These are public test credentials for the disposable local fixtures only.
 Both adapter tests can override their database port with
 `MCP_TEST_MYSQL_PORT` or `MCP_TEST_PG_PORT`. These overrides apply only to the
 Elixir tests. The JavaScript SDK script currently fixes database ports 13307 and
-15433 and HTTP ports 13007 and 13008; changing an Elixir variable does not
-reconfigure it or Compose. Keep the supplied ports for the full suite.
+15433 and HTTP ports 13007/13008 and cache-check ports 13027/13028; changing an
+Elixir variable does not reconfigure it or Compose. Keep the supplied ports for
+the full suite.
 
 ## Individual integration stages
 
@@ -149,6 +150,12 @@ per-request authentication/Origin/version,
 cancellation, DELETE and invalidated IDs. PostgreSQL uses a read-only fixture
 function around `pg_sleep` because PII policy rejects `pg_*` identifiers.
 
+[`test/cache.mjs`](../test/cache.mjs), invoked by the same SDK runner, checks
+cache schema discovery, opt-in/hit/miss behavior, TTL, bound-value isolation,
+PII policy and write invalidation on both transports and engines. HTTP uses two
+sessions sharing an entry. It temporarily updates only the disposable fixture's
+label and restores it in `finally`.
+
 For dependency security checks, run from the workspace root:
 
 ```sh
@@ -168,53 +175,52 @@ offline-capable format/compile/test steps.
 | MySQL real database | Binding, metadata aliases, decimal/large-integer/date results, native read-only rejection of a modifying function, quoted file-SQL rejection, committed writes, duplicate-key rollback, schema denials, table DDL and filtered SHOW COLUMNS |
 | PostgreSQL real database | Binding, numeric/large-integer/date precision, read-only rejection of modifying functions/CTEs/EXPLAIN ANALYZE, writes, rollback, schema isolation, denied quoted/unquoted three-part ALTER targets, table DDL and masked RETURNING |
 | Official MCP SDK | Initialize, tools/resources, root/table reads, bound queries, denied writes and sensitive references, stdio and session-based HTTP for both servers |
+| Cache ExUnit | Disabled/default configuration, key scope, fixed TTL, slow queries, capacity/byte bounds, errors, concurrent writes, cancelled writers, stale fills, restart invalidation and redacted payloads |
 | Session/runtime ExUnit | Initialization/version binding, duplicate IDs, per-session/global capacity, cancellation isolation, worker crashes/deadlines, owner death, idle expiry, response cap and pool/listener restart |
 | Raw escripts | Actual timeout results, responsive ping, cancellation/recovery, JSON-only stdout, MySQL driver logging on stderr, UTF-8/buffer framing, oversized partial input and draining on EOF |
 | Dashboard | Fixed counters/outcomes, private atomic files, invalid/symlink/oversized files, distinct instances, inventory cap, collector loss, hung sampler, storage-permission recovery, freshness and terminal escaping; built viewers with invalid DB settings, JSONL watch cancellation and live MySQL/PG stdio/HTTP snapshots |
 | HTTP boundaries | Exact bearer matching, rejected Origin, protocol version, size and media types; SDK concurrent clients |
 
+## Benchmark checks
+
+The current [four-mode report](benchmarks/STRESS.md) replaces older result tables.
+Run its smoke/full commands only against the disposable fixtures, after building
+both escripts. `test/cache-benchmark.mjs` covers stdio, HTTP, stdio + cache and
+HTTP + cache with the same lookup/concurrency and alternating execution order.
+Every result row and request ID is checked; busy replies and unexpected errors
+fail the run. Additional probes check all-miss behavior and live reads without
+cache opt-in. Performance runs are separate from SDK tests that mutate fixtures.
+
 ## Recorded evidence and limits
 
-The subsequent 2026-10-20 stdio optimization passed
-`MCP_INTEGRATION=true rtk proxy ./bin/check`: **39 ExUnit tests** (35 core and two
-per adapter), both builds and all SDK/dashboard/raw-escript checks. New checks
-cover string/integer request-ID separation, ID reuse after completion,
-cancellation, crash and timeout, and pipelined/batched output on EOF. The
-[stdio comparison](benchmarks/STDIO.md) records its separate throughput results.
+The 2026-10-20 cache implementation passed `MCP_INTEGRATION=true rtk proxy ./bin/check`:
+**51 ExUnit tests** (47 core and two per adapter), both builds, official SDK,
+dashboard, raw-escript/session and cache checks. This includes cache expiry,
+key scope, bounded admission, PII policy, write invalidation, cancellation,
+restart behavior and query counters that exclude hits. The current benchmark
+refresh changes only harnesses and documentation; application behavior is unchanged.
 
-The 2026-10-20 session implementation passed
-`MCP_INTEGRATION=true rtk proxy ./bin/check`: 38 ExUnit tests (34 core and two per
-adapter), both builds, official SDK checks, dashboard checks and the raw
-session/cancellation/framing probes. Session race checks also passed three
-explicit seeds. Local three-trial stdio measurements improved four concurrent
-200 ms reads from approximately 835 ms to 205–210 ms; this is not a production
-load claim. See [session evidence and limits](../.worklog/session-implementation-2026-10-20.md).
+The refresh's default `rtk proxy ./bin/check` passed **49 tests** with two live
+adapter tests excluded, plus format, warnings-as-errors compilation and both
+builds. The four-mode smoke passed **24 phases**, and the standalone stress
+runner passed its **16-phase smoke** with zero errors or busy replies. Full
+campaign evidence and exact source/build hashes are in [STRESS.md](benchmarks/STRESS.md) and its raw
+artifact. The earlier full integration result above remains explicitly separate.
 
-The dashboard baseline was recorded on 2026-10-19:
-`MCP_INTEGRATION=true ./bin/check` passed all 24 ExUnit tests (20 core and two
-per adapter), both escript builds, official SDK stdio/HTTP and dashboard checks,
-and both raw timeout/framing probes. Dashboard publishing was enabled on both
-transports for both databases. Separate built-escript viewers used deliberately
-invalid database/HTTP settings and still read snapshots successfully. Watch
-JSONL/cancellation left the server responsive.
+Dashboard tests cover private snapshots, invalid/symlink/oversized files, collector
+loss, hung sampling, storage-permission recovery and viewers without database
+credentials. The [screenshot](DASHBOARD.md#screenshot-and-example) is from the
+fixture demo. Hex audits were recorded separately in the
+[fix log](../.worklog/fixes-2026-10-19.md); they are not part of the benchmark.
 
-A real fixture demo produced the [documented screenshot](DASHBOARD.md#screenshot-and-example).
-Failure isolation tests cover unsafe storage permissions, collector loss and
-a hung metrics worker; full-disk fault injection and instrumentation throughput
-benchmarking were not performed. See the
-[dashboard implementation log](../.worklog/dashboard-2026-10-19.md).
-Hex audits passed for all three Mix projects with Bandit 1.13.1, Decimal 3.1.2
-and Bandit's required Thousand Island 1.6.0. Detailed evidence and earlier dated
-runs are in [.worklog/status.md](../.worklog/status.md) and
-[the fix log](../.worklog/fixes-2026-10-19.md).
-
-Verification covered the pinned runtime, MySQL 8.4 and PostgreSQL 16. Live
-database TLS/mTLS, Unix sockets, external SSH tunnels, reverse proxies, production
-deployments, load limits and other database/runtime/client versions were not
-part of that run. TLS configuration tests do not prove a live handshake.
-Driver dependencies emitted Elixir 1.20 deprecation warnings; application
-compilation passed with warnings as errors.
+Verification covers the pinned runtime, MySQL 8.4 and PostgreSQL 16 on local
+fixtures. Live TLS/mTLS, Unix sockets, SSH tunnels, reverse proxies, production
+deployments, other versions, full-disk faults and dashboard performance overhead
+were not checked in this campaign. Config tests do not prove a live TLS handshake.
+The tiny hot-read workload is not production capacity or an absolute hardware
+maximum. Historical implementation evidence remains in
+[.worklog/status.md](../.worklog/status.md).
 
 For new behavior, add regression coverage at the affected boundary and record
-the exact commands actually run. Do not infer successful deployment, database
-recovery or PII compliance from local test success.
+the exact commands actually run. Do not infer deployment, database recovery or
+PII compliance from local test success.

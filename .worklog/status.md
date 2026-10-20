@@ -312,3 +312,63 @@ blocks, all three touched JavaScript syntax checks and git diff --check passed.
 Disposed of the fixture containers/network and temporary baseline executables
 after verification. Repository settings remain unchanged. Measurements cover
 tiny hot reads, not production SQL, TLS, large results or long soak behavior.
+
+
+## 2026-10-20 — optional query cache
+
+Implemented disabled-by-default ETS + fixed TTL caching, per-read opt-in,
+bounded admission, monitored write invalidation and generation-safe fills.
+Full integration
+check passed 51 ExUnit tests and both SDK transports/engines. The
+[cache benchmark](../docs/benchmarks/CACHE.md) measured 23.48 million validated
+responses with zero errors/rejections; cached hot-read RPS improved 6.94–10.85x.
+
+
+## 2026-10-20 — consolidated four-mode benchmark and licensing
+
+Request: refresh stdio, HTTP, stdio + cache and HTTP + cache benchmarks;
+replace older README/STRESS tables and align related documentation.
+Using RTK and Ponytail on base `ae54325`. Server code remains unchanged.
+The harness now omits cache opt-in in uncached modes, explicitly fixes cache
+bounds, labels each mode and interleaves all four modes in alternating rounds.
+Completed 64 measured phases and 23,155,439 validated responses with zero errors
+or busy replies. The 24 confirmations use three fresh 20-second runs per
+engine/mode at concurrency 64 with a five-second cache TTL. Median stdio / HTTP /
+stdio + cache / HTTP + cache RPS: MySQL 9,210 / 9,192 / 63,938 / 88,063;
+PostgreSQL 7,948 / 7,982 / 63,793 / 87,865. Preserved all ranges, including the
+55,680–64,030 PostgreSQL cached-stdio range. HTTP has four sessions/generator
+threads versus one for stdio; tiny cached reads do not establish production
+capacity or an absolute maximum.
+
+Replaced README and [STRESS](../docs/benchmarks/STRESS.md) tables and the current
+[raw artifact](../docs/benchmarks/stress-2026-10-20.json); related adapter, cache,
+stdio, testing, configuration, operations and developer docs point to that report.
+Earlier revision/cache raw artifacts are explicitly historical. Captured laptop,
+runtime, database, driver, Docker versions/digests and 22 source/build SHA-256
+hashes without hardware identifiers. Recomputed RPS, histograms, per-second totals
+and summary medians and verified every recorded hash against the measured build.
+
+Validation: default `rtk proxy ./bin/check` passed 49 ExUnit tests (two live
+adapter tests excluded), format, warnings-as-errors compilation and both builds.
+Four-mode smoke passed 24 phases; the standalone stress entrypoint passed 16
+phases, both without errors/busy replies. The earlier full SDK/integration run
+remains separate evidence; this refresh changes no application code. Checked
+232 relative documentation links, 59 shell blocks and both JS syntax checks.
+
+User also requested free noncommercial/open-source use, paid commercial use and
+copyright attribution. Added Renat "MpaK" Ibragimov and https://aomega.co to the
+root license, README and application READMEs. With the commercial-open-source
+clarification unanswered, used the stated assumption that commercial use still
+requires payment even when source is published. Free covered use is under
+unmodified PolyForm Noncommercial 1.0.0, retaining its express organization
+permissions; other commercial use requires a separate written paid agreement.
+The [licensing guide](../docs/LICENSING.md) describes this as source-available,
+explains scope and preserves previous MIT grants. Kept Ben Borla's original MIT
+notice verbatim in [third-party notices](../THIRD-PARTY-NOTICES.md), and left the
+reference project's MIT file unchanged. Verified the standard license text
+against the official download hash. Ownership and commercial agreement terms
+still require legal review before release; no price or contract was invented.
+
+Final `git diff --check` passed. Removed the task-owned fixture containers and
+network; `docker compose -f compose.test.yml ps -a` is empty. No commits or
+publication were performed.

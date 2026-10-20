@@ -38,6 +38,10 @@ Booleans accept exactly `true` or `false`; invalid settings fail startup.
 | `REMOTE_SECRET_KEY` | unset | Required for HTTP; exact bearer token |
 | `MCP_HTTP_HOST`, `PORT` | `127.0.0.1`, `3000` | HTTP bind IP and port |
 | `MCP_ALLOWED_ORIGINS` | empty | Comma-separated accepted Origins; Origin-bearing requests denied by default |
+| `MCP_CACHE_ENABLED` | `false` | Enable the per-process SQL result cache; reads still require `cache: true` |
+| `MCP_CACHE_TTL_MS` | `5000` | Fixed TTL in milliseconds, 1–2147483647, starting before SQL execution |
+| `MCP_CACHE_MAX_ENTRIES` | `1000` | Maximum cached payloads, 1–100000 |
+| `MCP_CACHE_MAX_ENTRY_BYTES` | `65536` | Maximum encoded payload bytes per entry, 1–8388608 |
 | `MCP_DASHBOARD` | `false` | Enable private local diagnostic snapshots |
 | `MCP_DASHBOARD_DIR` | XDG state directory or `~/.local/state/mcp-ex` | Same private directory for publisher and viewer |
 | `MCP_MAX_REQUEST_BYTES` | `1048576` | Maximum SQL/message input bytes |
@@ -50,6 +54,10 @@ Booleans accept exactly `true` or `false`; invalid settings fail startup.
 Schema overrides replace each operation's global default. MySQL permission
 matching is case-insensitive and conflicting denies win. PostgreSQL unquoted
 names are lowercased; quoted schema names match exactly.
+
+See [query cache semantics](../docs/CONFIGURATION.md#optional-query-cache) before
+opting in. Hits use protected ETS directly, share redacted payloads across this
+runtime's sessions and retain the normal policy/response-size checks.
 
 ## SQL and transaction boundaries
 
@@ -153,3 +161,20 @@ or pool startup. The adapter supplies `pool_metrics(context)` through
 DBConnection. No dashboard dependencies, new connections or listener are added.
 See [developer contracts](../docs/DEVELOPER-GUIDE.md#dashboard-implementation)
 and [operator instructions](../docs/DASHBOARD.md).
+
+## Current performance measurements
+
+The [four-mode stress report](../docs/benchmarks/STRESS.md) compares stdio, HTTP,
+stdio + cache and HTTP + cache using the same fixture query and total concurrency.
+It includes RPS, latency, CPU/RSS, cache-hit counts, machine/software versions and
+reproduction commands. Cached RPS mostly reuses results; it is not database-query
+throughput. See [cache configuration](../docs/CONFIGURATION.md#optional-query-cache)
+for opt-in and freshness rules.
+
+## License and author
+
+Copyright © 2026 Renat "MpaK" Ibragimov — [aomega.co](https://aomega.co).
+Free permitted use is under [PolyForm Noncommercial](../LICENSE); commercial
+projects outside its permitted purposes require a paid license from the author.
+See [licensing details](../docs/LICENSING.md) and
+[third-party notices](../THIRD-PARTY-NOTICES.md).

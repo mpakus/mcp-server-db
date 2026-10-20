@@ -20,6 +20,8 @@ passing database/SDK/timeout checks and clean Hex audits.
 | [Testing](TESTING.md) | Developers and operators | Unit checks, disposable database setup, SDK checks and evidence limits |
 | [Troubleshooting](TROUBLESHOOTING.md) | All audiences | Startup, transport, SQL and metadata problems; error/status reference |
 | [Dashboard](DASHBOARD.md) | Users, operators and developers | CLI/watch setup, resources, metric definitions, privacy, screenshot and demo |
+| [Licensing and author](LICENSING.md) | Users and integrators | Free permitted use, paid commercial licenses, copyright and preserved third-party rights |
+| [Benchmarks](benchmarks/STRESS.md) | Users, operators and developers | Current stdio, HTTP, stdio + cache and HTTP + cache comparison, laptop versions and reproduction |
 | [Dashboard design](DASHBOARD-PLAN.md) | Developers | Original design and implementation scope |
 
 For a first connection, follow the user guide, select the database settings in
@@ -39,6 +41,9 @@ The [TypeScript reference](../mcp-server-mysql/README.md) has its own
 documentation; its configuration and deployment instructions do not automatically
 apply to the Elixir servers.
 
-Documentation and the latest full runtime verification were updated on
-2026-10-19; see
+Documentation and runtime verification cover the 2026-10-20 cache implementation; see
 [test evidence and limits](TESTING.md#recorded-evidence-and-limits).
+
+[Optional query caching](CONFIGURATION.md#optional-query-cache) documents the
+per-read opt-in, expiry and invalidation rules. The [current benchmark](benchmarks/STRESS.md) compares stdio, HTTP, stdio + cache
+and HTTP + cache, with additional cold-cache and opt-out probes.

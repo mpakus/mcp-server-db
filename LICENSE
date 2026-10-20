@@ -1,21 +1,50 @@
-# MIT License
+# Project licensing
 
-Copyright (c) 2024 Ben Borla
+Copyright (c) 2026 Renat "MpaK" Ibragimov (https://aomega.co)
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Required Notice: Copyright (c) 2026 Renat "MpaK" Ibragimov (https://aomega.co)
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+## Scope
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+These terms apply to the original Elixir implementation and project additions
+that Renat "MpaK" Ibragimov has the right to license, when distributed with this
+notice. Third-party code, incorporated upstream material and dependencies remain
+under their respective licenses; see THIRD-PARTY-NOTICES.md. In particular,
+mcp-server-mysql/ remains under its existing MIT license.
+
+## Free permitted use
+
+The covered software is offered without a license fee under the unmodified
+PolyForm Noncommercial License 1.0.0, whose complete terms are included in
+LICENSES/PolyForm-Noncommercial-1.0.0.txt and available at:
+https://polyformproject.org/licenses/noncommercial/1.0.0
+
+This includes noncommercial use and noncommercial open-source projects, plus
+the personal-use and noncommercial-organization purposes expressly permitted
+by that license. Retain the required notices and license terms when distributing
+covered copies or modifications. Publishing source code does not, by itself,
+make an otherwise commercial use a permitted purpose.
+
+## Paid commercial use
+
+Commercial projects and other uses outside the PolyForm license's permitted
+purposes require a separate paid commercial license from Renat "MpaK" Ibragimov
+before that use begins. This includes commercial use of an open-source project
+when it is not otherwise a permitted purpose under the PolyForm terms.
+
+To arrange a commercial license, contact the author through https://aomega.co.
+Pricing, licensed entities, deployment scope, support and other commercial terms
+are established by a separate written agreement. This notice does not itself
+grant commercial rights or promise support, and a donation or payment without
+that agreement does not create a commercial license.
+
+## Existing rights
+
+This licensing notice does not withdraw permissions previously granted for
+copies or versions distributed under MIT or another license. Their recipients
+retain the rights granted by those licenses. It also does not restrict any
+rights independently granted by upstream authors.
+
+The PolyForm text governs the free license; a separately executed commercial
+agreement governs the commercial license. This explanatory notice does not
+modify the standardized PolyForm license text.

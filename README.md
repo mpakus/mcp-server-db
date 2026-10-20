@@ -75,6 +75,37 @@ Use [client configuration](docs/USER-GUIDE.md#connect-a-stdio-client) for normal
 usage. `.env` files must be exported explicitly. Restart the process after
 changing configuration.
 
+## Optional ETS + TTL query cache
+
+Caching is **disabled by default**. Enable it in the server/client launch
+environment and restart the server:
+
+```sh
+export MCP_CACHE_ENABLED=true
+export MCP_CACHE_TTL_MS=5000
+export MCP_CACHE_MAX_ENTRIES=1000
+export MCP_CACHE_MAX_ENTRY_BYTES=65536
+```
+
+Then pass `"cache": true` on individual reads that may be reused:
+
+```json
+{"name":"mysql_query","arguments":{"sql":"SELECT id, label FROM users WHERE id = ?","params":[1],"cache":true}}
+```
+
+This is the `params` object of a `tools/call` request. For PostgreSQL use
+`pg_query` and `$1`. The result's `_meta.cache` reports `hit`, `miss`, `disabled`
+or `bypass`. Omitting `cache` keeps reads live. Both transports share the same
+implementation; HTTP sessions share one instance's cache. Protected ETS serves
+hits directly, with a supervised owner handling bounded storage and TTL cleanup.
+
+Entries contain normalized/masked payloads. Policy still runs on hits. Writes
+through this server invalidate all entries; writes elsewhere rely on TTL.
+Resource discovery remains live. Use uncached calls for immediate freshness or
+volatile functions. See [configuration and consistency limits](docs/CONFIGURATION.md#optional-query-cache),
+[client usage](docs/USER-GUIDE.md#optional-cached-reads) and
+[four-mode benchmarks](docs/benchmarks/STRESS.md).
+
 ## Server dashboard
 
 Add `MCP_DASHBOARD=true` to your MCP server's environment and restart it.
@@ -103,8 +134,8 @@ for custom directories, JSON/watch behavior, freshness and exit codes.
 
 ## Behavior and limits
 
-Each tool accepts one SQL statement and an optional array of bound values.
-Reads use database-enforced read-only transactions. Simple writes and table DDL
+Each tool accepts one SQL statement, an optional array of bound values and an
+optional cache opt-in. Executed reads use database-enforced read-only transactions. Simple writes and table DDL
 require operation/schema permissions. PostgreSQL connects to one database per
 process; its multi mode discovers schemas in that database. MySQL table DDL
 implicitly commits.
@@ -121,131 +152,33 @@ Sessions support cancellation and DELETE, and expire after five idle minutes by
 default. There is no SSE stream, durable session storage, OAuth server or browser CORS preflight.
 See [HTTP operation](docs/OPERATIONS.md#run-http) for headers and examples.
 
-## Performance before and after MCP sessions
-
-Benchmarked on 2026-10-20 using clean builds of `b542550` (before) and `9646c0a`
-(after session processes, bounded query workers and buffered stdio). Values below
-are **before → after, in milliseconds**, using the median of five samples after
-ten warm-up queries. Lower is better.
-
-| Server | Transport | `SELECT 1` | Four concurrent 200 ms queries | Ping behind a 300 ms query | Ping with 256 KiB input padding |
-| --- | --- | ---: | ---: | ---: | ---: |
-| MySQL | stdio | 1.77 → 1.16 | 831.15 → 206.93 | 278.76 → 0.39 | 4,531.43 → 1.03 |
-| PostgreSQL | stdio | 1.83 → 1.60 | 839.04 → 208.38 | 277.39 → 0.36 | 4,311.52 → 1.11 |
-| MySQL | HTTP | 1.99 → 1.66 | 208.12 → 207.94 | 2.13 → 2.09 | 1.50 → 1.27 |
-| PostgreSQL | HTTP | 2.22 → 2.09 | 208.40 → 211.19 | 1.49 → 1.72 | 0.99 → 1.38 |
-
-Stdio completed the four-query batch **about 4× faster** on both servers.
-Pings finished ahead of the slow query in every after sample; previously stdio
-pings waited for it. Buffered input reduced the large padded ping from over four
-seconds to about one millisecond. HTTP already handled concurrent requests, and
-its batch latency remained around 208–211 ms.
-
-Both revisions used the same disposable Docker fixtures, pool size 10, one
-client/session at a time, and disabled dashboard/PII redaction; the new session
-allowed four query workers. Host: Apple M5 Max, 64 GiB RAM, macOS 27.0.1,
-Erlang 28.5 / Elixir 1.20.4; databases: MySQL 8.4.11 and PostgreSQL 16.15.
-Initialization/startup is excluded. The ping was sent 30 ms after the slow query.
-
-These local sleep-query and framing tests measure concurrency and latency, not
-production SQL throughput. Five samples do not establish tail latency or the
-significance of small timing differences. That comparison did not measure
-CPU/memory usage or sustained load; the stress test below covers those separately.
-See [methodology and reproduction](docs/benchmarks/README.md),
-[all samples and environment](docs/benchmarks/session-processes-2026-10-20.json),
-and the [benchmark harness](test/benchmark.mjs).
-
 ## Local stress benchmark
 
-The throughput test uses `SELECT 1 AS value` through the complete MCP SQL tool
-path, including SQL policy, a read-only database transaction and result
-validation. It runs the client, one MCP server and disposable Docker databases
-on the same laptop. The [stress methodology](docs/benchmarks/STRESS.md) describes
-the concurrency sweep, overload checks and reproduction commands.
+The current comparison covers **stdio**, **HTTP**, **stdio + cache**, and
+**HTTP + cache** for both databases, using the same bound primary-key lookup
+and 64 concurrent requests. Each value is the median of three 20-second runs.
+Cache runs keep the five-second TTL active; cached responses are not SQL-query
+throughput. Older before/after tables are superseded by this comparison.
 
-### Stdio optimization: fresh before/after comparison
-
-The 2026-10-20 follow-up compares `ffce357` with bounded stdout batching and an
-active-request-ID index. Stdio keeps one supervised session GenServer and
-concurrent query workers. Responses already queued are written together without
-waiting to fill a batch; session duplicate checks/cancellation use direct ID lookup.
-
-Each value is the median of **three 30-second runs** at identical before/after
-settings: pool/limit 128 and concurrency 124 for MySQL; pool/limit 96 and
-concurrency 88 for PostgreSQL. Latency percentiles merge the three histograms.
-
-| Engine | Stdio before RPS | Stdio after RPS | Gain | Stdio p99 before → after (ms) |
+| Engine | stdio RPS | HTTP RPS | stdio + cache RPS | HTTP + cache RPS |
 | --- | ---: | ---: | ---: | ---: |
-| MySQL | 8,727 | **12,755** | **+46.2%** | 20.40 → 16.25 |
-| PostgreSQL | 8,031 | **9,582** | **+19.3%** | 16.30 → 15.15 |
+| MySQL | **9,210** | **9,192** | **63,938** | **88,063** |
+| PostgreSQL | **7,948** | **7,982** | **63,793** | **87,865** |
 
-For comparison, new HTTP with one / four sessions measured
-**12,296 / 12,174 RPS** for MySQL and
-**9,513 / 9,487 RPS** for PostgreSQL at those same total
-concurrencies. Stdio now reaches similar throughput with one session. These
-controls also vary generator thread count; they do not isolate session count alone.
+**23,155,439 validated responses across 64 phases; zero errors or busy replies.**
+Stdio uses one session; HTTP uses four. Pool/global worker cap and per-session
+limits are 128 for MySQL and 96 for PostgreSQL; dashboard/PII are off. These are
+benchmark overrides, not changed defaults. This is a local hot-read comparison,
+not a production-capacity or absolute-maximum claim.
 
-All **30 confirmation runs** completed **9,427,093 successful responses**
-with **zero errors or busy replies**. Excess-load sweeps are counted separately.
-The full correctness check passed **39 ExUnit tests**, both builds and all SDK,
-dashboard and raw transport checks. Repository pool/concurrency defaults remain
-unchanged. See [ranges, CPU/RAM, methodology and reproduction](docs/benchmarks/STDIO.md),
-[raw results and verified environment](docs/benchmarks/stdio-2026-10-20.json), and
-the [comparison harness](test/stdio-benchmark.mjs).
+MacBook Pro `Mac17,6`, Apple M5 Max (18 cores), 64 GiB RAM, macOS 27.0.1;
+Elixir 1.20.4, Erlang/OTP 28.5 / ERTS 16.4; MySQL 8.4.11, PostgreSQL 16.15;
+Node 26.8.2, Docker Engine 29.8.0 (18 CPUs / about 7.75 GiB VM RAM).
 
-### Initial stress results (before stdio optimization)
-
-Highest error-free candidates from the concurrency sweep, confirmed with **three
-30-second runs** each. RPS below is the median of those runs; latency percentiles
-combine all successful requests from those confirmations.
-
-| Server / transport | Successful RPS | Concurrent requests | p95 (ms) | p99 (ms) |
-| --- | ---: | ---: | ---: | ---: |
-| MySQL / stdio | **9,003** | 124 | 17.35 | 20.10 |
-| MySQL / HTTP | **12,963** | 124 | 12.65 | 15.60 |
-| PostgreSQL / stdio | **8,399** | 88 | 13.45 | 15.80 |
-| PostgreSQL / HTTP | **10,221** | 92 | 11.60 | 14.15 |
-
-These results use temporary pool/per-session limits of **128 for MySQL** and
-**96 for PostgreSQL**. Stdio has one session; HTTP has four sessions and four
-load-generator threads. Repository defaults remain pool 10 / per-session limit
-4. Dashboard and PII redaction were disabled; HTTP and database traffic used
-local connections without TLS.
-
-The selected configurations completed **3,645,110 successful requests** across
-the twelve confirmation runs with zero errors or busy replies. Overload
-rejections and rejected candidates are retained in the raw results and excluded
-from the headline rates. A bound lookup of the fixture's one-row table reached
-8,820 / 12,646 RPS for MySQL and 8,174 / 10,154 RPS for PostgreSQL (stdio / HTTP).
-
-During confirmations, BEAM averaged about **5.4–5.7 CPU cores**, with sampled
-process RSS peaks of **148–192 MiB**; database/VM resource use is separate.
-These are observed local peaks for tiny, hot reads within the tested settings.
-Larger queries/results, writes, production networks and longer soak tests need
-separate measurements. See [full results and reproduction](docs/benchmarks/STRESS.md),
-[raw phases, histograms and environment](docs/benchmarks/stress-2026-10-20.json),
-and the [stress harness](test/stress.mjs).
-
-### Test machine and versions
-
-Recorded locally on 2026-10-20; original application source: `d69485f`.
-Runtime/database versions, CPU, RAM, OS and Docker allocation were rechecked
-for the stdio follow-up above.
-
-| Component | Version / specification |
-| --- | --- |
-| Laptop | MacBook Pro `Mac17,6`, AC power |
-| Processor | Apple M5 Max, arm64; 18 CPU cores (6 Super + 12 Performance) |
-| Memory / GPU | 64 GiB unified memory; 40-core GPU (unused by the test) |
-| Storage | 2 TB APPLE SSD AP2048Z; database fixtures use tmpfs |
-| macOS | 27.0.1, build 26A434 |
-| Elixir | 1.20.4 |
-| Erlang/OTP | 28.5, ERTS 16.4, JIT, 18 online schedulers |
-| MySQL / driver | 8.4.11 / MyXQL 0.9.0 |
-| PostgreSQL / driver | 16.15 / Postgrex 0.22.4 |
-| Shared pool / HTTP | DBConnection 2.10.2; Bandit 1.13.1; Plug 1.20.3 |
-| Docker | Desktop 4.92.0, Engine 29.8.0; VM: 18 CPUs, about 7.75 GiB RAM |
-| Load generator | Node.js 26.8.2 |
+See [STRESS.md](docs/benchmarks/STRESS.md) for latency, CPU/RSS, cache-hit rates,
+cold-cache probes, exact configuration, laptop/software versions and reproduction.
+[Raw measurements](docs/benchmarks/stress-2026-10-20.json) include every phase,
+histogram, per-second count and source/build hash.
 
 ## Verify
 
@@ -268,11 +201,25 @@ For real database and SDK checks, run from the workspace root:
 ```
 
 The fixtures use disposable tmpfs storage and loopback database ports
-13307 and 15433. SDK tests also need ports 13007 and 13008. Node and Docker are
+13307 and 15433. SDK tests also need ports 13007/13008 and 13027/13028. Node and Docker are
 needed only for integration checks. Tests mutate fixtures; use the supplied test environment.
 [Testing instructions and coverage](docs/TESTING.md) explain the checks and
 remaining verification limits. `bin/check` uses RTK when available.
 
 Tasks and evidence are tracked in [.worklog/status.md](.worklog/status.md);
 implementation decisions are in [.worklog/analysis.md](.worklog/analysis.md).
-MIT license and reference-project attribution: [LICENSE](LICENSE).
+
+## License and author
+
+Copyright © 2026 Renat "MpaK" Ibragimov — [aomega.co](https://aomega.co).
+
+**Free for noncommercial use and noncommercial open-source projects** under
+[PolyForm Noncommercial 1.0.0](LICENSES/PolyForm-Noncommercial-1.0.0.txt), including
+its expressly permitted organization uses. **Commercial projects outside those
+permissions require a separate paid commercial license**, even if they publish
+source code. Contact [the author](https://aomega.co) to arrange terms.
+
+This is a source-available license. See [LICENSE](LICENSE) and the
+[licensing guide](docs/LICENSING.md) for scope and conditions. Existing MIT grants
+and third-party licenses remain intact; Ben Borla's reference-project attribution
+and MIT terms are preserved in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

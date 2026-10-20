@@ -1,6 +1,7 @@
 // Build both escripts and start compose.test.yml before running. Fixture reads only.
 // stdout: JSONL results; stderr: progress. STRESS_SMOKE=true runs a short self-check.
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { spawn, execFile } from "node:child_process";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
@@ -18,7 +19,7 @@ export const targets = {
   pg: { app: "pg", prefix: "PG", port: 15433, http: 13108, placeholder: "$1" },
 };
 
-function httpClient(target) {
+export function httpClient(target) {
   const agent = new http.Agent({ keepAlive: true, maxSockets: 128 });
   let sequence = 0, session;
   async function send(message, status = 200) {
@@ -72,6 +73,7 @@ export async function startServer(target, transport, config) {
       [`${target.prefix}_USER`]: "mcp_test", [`${target.prefix}_PASS`]: "mcp_test_password",
       [`${target.prefix}_DB`]: "mcp_test", [`${target.prefix}_POOL_SIZE`]: String(config.pool),
       MCP_MAX_INFLIGHT: String(config.inflight), MCP_DASHBOARD: "false",
+      ...(config.cacheEnabled === undefined ? {} : { MCP_CACHE_ENABLED: String(config.cacheEnabled), MCP_CACHE_TTL_MS: String(config.cacheTtl || 5000), MCP_CACHE_MAX_ENTRIES: String(config.cacheMaxEntries || 1000), MCP_CACHE_MAX_ENTRY_BYTES: String(config.cacheMaxEntryBytes || 65536) }),
       ENABLE_PII_REDACTION: "false", REMOTE_SECRET_KEY: "local-stress", PORT: String(target.http),
     },
   });
@@ -159,25 +161,36 @@ function receive(worker) {
 }
 
 async function load(client, target, concurrency, seconds, workload) {
-  const stats = { ok: 0, busy: 0, errors: 0, error_examples: [], histogram: {}, per_second_ok: [], latency_sum_ms: 0, latency_max_ms: 0 };
+  const stats = { ok: 0, busy: 0, errors: 0, cache_status: {}, error_examples: [], histogram: {}, per_second_ok: [], latency_sum_ms: 0, latency_max_ms: 0 };
   const start = performance.now(), end = start + seconds * 1000;
   const elu = performance.eventLoopUtilization(), cpu = process.threadCpuUsage();
   const lag = monitorEventLoopDelay({ resolution: 10 }); lag.enable();
-  const args = workload === "lookup"
+  const kind = typeof workload === "string" ? workload : workload.kind;
+  let sequence = 0;
+  const coldSql = `SELECT id, label FROM users WHERE id = ${target.placeholder} AND ${target.app === "mysql" ? "?" : "$2"} >= 0 /* ${randomUUID()} */`;
+  const args = kind === "lookup"
     ? { sql: `SELECT id, label FROM users WHERE id = ${target.placeholder}`, params: [1] }
     : { sql: "SELECT 1 AS value" };
+  if (workload.cache !== undefined) args.cache = workload.cache;
   await Promise.all(Array.from({ length: concurrency }, async () => {
     while (performance.now() < end) {
       const begin = performance.now();
       try {
-        const response = await client.call("tools/call", { name: `${target.app}_query`, arguments: args });
+        const response = await client.call("tools/call", { name: `${target.app}_query`, arguments: workload.unique ? { ...args, sql: coldSql, params: [1, ++sequence] } : args });
         if (response.error?.message === "Server busy; retry later") { stats.busy++; continue; }
         assert.equal(response.error, undefined, JSON.stringify(response.error));
         assert.equal(response.result.isError, false);
         const rows = JSON.parse(response.result.content[0].text);
         assert.equal(rows.length, 1);
-        if (workload === "lookup") { assert.equal(rows[0].id, 1); assert.equal(rows[0].label, "sample"); }
+        if (kind === "lookup") { assert.equal(rows[0].id, 1); assert.equal(rows[0].label, "sample"); }
         else assert.equal(rows[0].value, 1);
+        if (workload.cache) {
+          const status = response.result._meta?.cache;
+          assert(["hit", "miss", "bypass", "disabled"].includes(status));
+          stats.cache_status[status] = (stats.cache_status[status] || 0) + 1;
+        } else if (typeof workload === "object") {
+          assert.equal(response.result._meta?.cache, undefined);
+        }
         const now = performance.now(), latency = now - begin;
         const bucket = Math.ceil(latency * 20); // 0.05 ms upper-bound histogram buckets.
         stats.histogram[bucket] = (stats.histogram[bucket] || 0) + 1;
@@ -245,8 +258,9 @@ export async function phase(server, target, transport, config, stage, concurrenc
   if (samplingError) throw samplingError;
   server.assertHealthy();
   const sum = key => samples.reduce((total, sample) => total + sample[key], 0);
-  const histogram = {}, perSecond = [];
+  const histogram = {}, perSecond = [], cacheStatus = {};
   for (const sample of samples) {
+    for (const [status, n] of Object.entries(sample.cache_status)) cacheStatus[status] = (cacheStatus[status] || 0) + n;
     for (const [bucket, n] of Object.entries(sample.histogram)) histogram[bucket] = (histogram[bucket] || 0) + n;
     sample.per_second_ok.forEach((n, i) => { perSecond[i] = (perSecond[i] || 0) + (n || 0); });
   }
@@ -263,12 +277,13 @@ export async function phase(server, target, transport, config, stage, concurrenc
     generator_event_loop_utilization: samples.map(s => s.event_loop_utilization === null ? null : round(s.event_loop_utilization)),
     generator_event_loop_delay_p99_ms: samples.map(s => s.event_loop_delay_p99_ms === null ? null : round(s.event_loop_delay_p99_ms)),
     per_second_successful: Array.from(perSecond, n => n || 0), latency_histogram_005ms: histogram,
+    ...(typeof workload === "object" && workload.cache ? { cache_status: cacheStatus } : {}),
     error_examples: samples.flatMap(s => s.error_examples).slice(0, 5),
   };
   assert.equal(Object.values(histogram).reduce((a, b) => a + b, 0), result.successful);
   if (stage !== "warmup") {
     console.log(JSON.stringify(result));
-    console.error(`${target.app} ${transport} ${stage} ${config.profile} c=${concurrency}: ${result.successful_rps} successful RPS, busy=${result.busy}, errors=${result.errors}, p99=${result.latency_ms.p99}ms`);
+    console.error(`${target.app} ${config.benchmarkMode || transport} ${stage} ${config.profile} c=${concurrency}: ${result.successful_rps} successful RPS, busy=${result.busy}, errors=${result.errors}, p99=${result.latency_ms.p99}ms`);
   }
   return result;
 }

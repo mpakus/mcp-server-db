@@ -7,6 +7,7 @@ defmodule McpEx.Diagnostics do
   @methods ~w(initialize ping tools/list tools/call resources/list resources/read)
   @keys ~w(requests rpc_success rpc_errors notifications tools tool_success tool_failed
     validation_errors policy_rejections database_failures processing_failures
+    cache_hit cache_miss cache_bypass cache_disabled
     tool_duration_us tool_max_us queries_read queries_write queries_ddl parse_errors oversize_errors) ++
           Enum.map(@methods ++ ["other"], &("method." <> &1)) ++
           Enum.map(
