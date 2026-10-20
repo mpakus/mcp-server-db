@@ -235,3 +235,40 @@ Validation: all README medians match the saved samples, benchmark JavaScript
 and documented shell blocks parse, local documentation links resolve and
 `git diff --check` passes. Removed disposable containers/network and isolated
 build directories; retained the source revisions, build log and raw evidence.
+
+## Local throughput stress test — 2026-10-20
+
+Using RTK/Ponytail and disposable Compose fixtures, added an assert-based stress
+harness for both adapters over stdio and HTTP. Captured benchmark-relevant
+hardware, power, runtime, database, dependency and Docker VM versions without
+device serial numbers or network identifiers. The harness separates successful
+RPS from busy replies, validates returned rows, and measures latency, BEAM CPU,
+sampled RSS and generator utilization.
+
+Exploratory pool-64 measurements found one busy reply in a long full-cap run;
+the final campaign confirms candidates below the worker cap. The sweep was
+expanded to pools 128 (MySQL) and 96 (PostgreSQL), within the existing database
+connection limits. An overlapping restart attempt was discarded; its timings
+are not included in the final campaign. Completed uncontaminated exploratory
+phases are retained separately. No server code/settings were persisted.
+
+Completed 82 final phases: 6,740,570 validated successful responses, zero
+unexpected errors and 1,202,096 separately counted busy replies, predominantly
+from intentional overload. PostgreSQL HTTP's 94-concurrency confirmation was
+rejected after a busy reply; 92 passed. The four selected settings completed
+3,645,110 responses across twelve 30-second runs with no errors or busy replies.
+Median successful RPS: MySQL stdio 9,002.58, MySQL HTTP 12,963.17, PostgreSQL stdio
+8,399.46, PostgreSQL HTTP 10,220.55. All four 15-second bound lookups also passed.
+
+Added hardware/software versions and a throughput/latency summary to the root
+README, with [methodology and resource tables](../docs/benchmarks/STRESS.md) and
+[raw phases, histograms and environment](../docs/benchmarks/stress-2026-10-20.json).
+Source/build hashes, phase durations, histogram counts, per-second totals,
+successful-RPS calculations and selected zero-error runs were cross-checked.
+These are observed local rates under finite tested settings; production SQL,
+network/TLS workloads, database/VM resource use and long-term soak behavior remain
+outside the measurements. Full ExUnit checks were not rerun; server code is unchanged.
+
+Final checks passed: harness syntax, 44 local documentation links, documented
+shell syntax, exact README/result agreement and `git diff --check`. All fixture
+containers and their network were removed after the completed run.

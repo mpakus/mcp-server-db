@@ -149,10 +149,71 @@ Initialization/startup is excluded. The ping was sent 30 ms after the slow query
 
 These local sleep-query and framing tests measure concurrency and latency, not
 production SQL throughput. Five samples do not establish tail latency or the
-significance of small timing differences. CPU/memory usage and sustained load
-were not measured. See [methodology and reproduction](docs/benchmarks/README.md),
+significance of small timing differences. That comparison did not measure
+CPU/memory usage or sustained load; the stress test below covers those separately.
+See [methodology and reproduction](docs/benchmarks/README.md),
 [all samples and environment](docs/benchmarks/session-processes-2026-10-20.json),
 and the [benchmark harness](test/benchmark.mjs).
+
+## Local stress benchmark
+
+The throughput test uses `SELECT 1 AS value` through the complete MCP SQL tool
+path, including SQL policy, a read-only database transaction and result
+validation. It runs the client, one MCP server and disposable Docker databases
+on the same laptop. The [stress methodology](docs/benchmarks/STRESS.md) describes
+the concurrency sweep, overload checks and reproduction commands.
+
+### Confirmed throughput
+
+Highest error-free candidates from the concurrency sweep, confirmed with **three
+30-second runs** each. RPS below is the median of those runs; latency percentiles
+combine all successful requests from those confirmations.
+
+| Server / transport | Successful RPS | Concurrent requests | p95 (ms) | p99 (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| MySQL / stdio | **9,003** | 124 | 17.35 | 20.10 |
+| MySQL / HTTP | **12,963** | 124 | 12.65 | 15.60 |
+| PostgreSQL / stdio | **8,399** | 88 | 13.45 | 15.80 |
+| PostgreSQL / HTTP | **10,221** | 92 | 11.60 | 14.15 |
+
+These results use temporary pool/per-session limits of **128 for MySQL** and
+**96 for PostgreSQL**. Stdio has one session; HTTP has four sessions and four
+load-generator threads. Repository defaults remain pool 10 / per-session limit
+4. Dashboard and PII redaction were disabled; HTTP and database traffic used
+local connections without TLS.
+
+The selected configurations completed **3,645,110 successful requests** across
+the twelve confirmation runs with zero errors or busy replies. Overload
+rejections and rejected candidates are retained in the raw results and excluded
+from the headline rates. A bound lookup of the fixture's one-row table reached
+8,820 / 12,646 RPS for MySQL and 8,174 / 10,154 RPS for PostgreSQL (stdio / HTTP).
+
+During confirmations, BEAM averaged about **5.4–5.7 CPU cores**, with sampled
+process RSS peaks of **148–192 MiB**; database/VM resource use is separate.
+These are observed local peaks for tiny, hot reads within the tested settings.
+Larger queries/results, writes, production networks and longer soak tests need
+separate measurements. See [full results and reproduction](docs/benchmarks/STRESS.md),
+[raw phases, histograms and environment](docs/benchmarks/stress-2026-10-20.json),
+and the [stress harness](test/stress.mjs).
+
+### Test machine and versions
+
+Recorded locally on 2026-10-20; application source: `d69485f`.
+
+| Component | Version / specification |
+| --- | --- |
+| Laptop | MacBook Pro `Mac17,6`, AC power |
+| Processor | Apple M5 Max, arm64; 18 CPU cores (6 Super + 12 Performance) |
+| Memory / GPU | 64 GiB unified memory; 40-core GPU (unused by the test) |
+| Storage | 2 TB APPLE SSD AP2048Z; database fixtures use tmpfs |
+| macOS | 27.0.1, build 26A434 |
+| Elixir | 1.20.4 |
+| Erlang/OTP | 28.5, ERTS 16.4, JIT, 18 online schedulers |
+| MySQL / driver | 8.4.11 / MyXQL 0.9.0 |
+| PostgreSQL / driver | 16.15 / Postgrex 0.22.4 |
+| Shared pool / HTTP | DBConnection 2.10.2; Bandit 1.13.1; Plug 1.20.3 |
+| Docker | Desktop 4.92.0, Engine 29.8.0; VM: 18 CPUs, about 7.75 GiB RAM |
+| Load generator | Node.js 26.8.2 |
 
 ## Verify
 

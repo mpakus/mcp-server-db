@@ -6,6 +6,9 @@ bounded query workers and buffered stdio were introduced. The root
 [README summary](../../README.md#performance-before-and-after-mcp-sessions)
 contains the measured medians.
 
+For sustained request rates, concurrency/overload sweeps, laptop specifications
+and CPU/memory measurements, see the [local stress test](STRESS.md).
+
 ## Workloads
 
 The [Node harness](../../test/benchmark.mjs) uses only the disposable databases
