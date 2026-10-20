@@ -293,11 +293,17 @@ object per line. JSON-RPC batches are unsupported.
 Supported protocol versions in this implementation are `2025-11-25`,
 `2025-06-18`, `2025-03-26` and `2024-11-05`. Initialization echoes a supported
 requested version or offers `2025-11-25`; the client must accept that negotiation.
-HTTP is stateless and does not preserve initialization state between requests.
+Both transports retain initialization state in a dedicated session process.
+HTTP initialization returns `MCP-Session-Id`; include it on subsequent requests.
+HTTP sessions expire after five idle minutes by default. A 404 means initialize
+a new session. DELETE ends a session explicitly; an HTTP disconnect alone does not.
 
 Only tools and resources are advertised. There are no prompts, subscriptions,
-resource templates, pagination cursors, cancellation handlers or persistent
-sessions. `ping` checks protocol responsiveness and does not run a database
+resource templates, pagination cursors or durable sessions. `notifications/cancelled`
+stops a tracked query/resource worker; it cannot guarantee rollback of a write
+that already committed. Requests can finish out of order and must have unique
+active IDs within their session. Await operations that depend on earlier writes.
+`ping` checks protocol responsiveness and does not run a database
 query. See [Troubleshooting](TROUBLESHOOTING.md) when startup or requests fail.
 
 For a manual stdio check, export the MySQL database settings first, then run

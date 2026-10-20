@@ -140,6 +140,13 @@ driver timeout log on stderr, so a logger-routing regression cannot pass just
 because the query happened to fail silently. This probe disables PII for its
 controlled slow-query function; normal SDK checks keep PII enabled.
 
+[`test/sessions.mjs`](../test/sessions.mjs) also checks responsive pings during
+SQL, cancellation and connection recovery, fragmented UTF-8, 256 KiB frames,
+oversized input without newline/EOF, final unterminated frames and draining on
+EOF. HTTP checks cover session IDs, per-request authentication/Origin/version,
+cancellation, DELETE and invalidated IDs. PostgreSQL uses a read-only fixture
+function around `pg_sleep` because PII policy rejects `pg_*` identifiers.
+
 For dependency security checks, run from the workspace root:
 
 ```sh
@@ -158,14 +165,23 @@ offline-capable format/compile/test steps.
 | Core ExUnit | Configuration validation, permissions, SQL literals/comments/targets, quoted file-SQL guards, extra write-target qualification, PII guards/masking, numeric encoding, initialization, safe errors, resource URIs and Plug HTTP boundaries |
 | MySQL real database | Binding, metadata aliases, decimal/large-integer/date results, native read-only rejection of a modifying function, quoted file-SQL rejection, committed writes, duplicate-key rollback, schema denials, table DDL and filtered SHOW COLUMNS |
 | PostgreSQL real database | Binding, numeric/large-integer/date precision, read-only rejection of modifying functions/CTEs/EXPLAIN ANALYZE, writes, rollback, schema isolation, denied quoted/unquoted three-part ALTER targets, table DDL and masked RETURNING |
-| Official MCP SDK | Initialize, tools/resources, root/table reads, bound queries, denied writes and sensitive references, stdio and stateless HTTP for both servers |
-| Raw escripts | Actual timeout results, JSON-only stdout, MySQL driver logging on stderr, post-error ping and clean EOF exit |
+| Official MCP SDK | Initialize, tools/resources, root/table reads, bound queries, denied writes and sensitive references, stdio and session-based HTTP for both servers |
+| Session/runtime ExUnit | Initialization/version binding, duplicate IDs, per-session/global capacity, cancellation isolation, worker crashes/deadlines, owner death, idle expiry, response cap and pool/listener restart |
+| Raw escripts | Actual timeout results, responsive ping, cancellation/recovery, JSON-only stdout, MySQL driver logging on stderr, UTF-8/buffer framing, oversized partial input and draining on EOF |
 | Dashboard | Fixed counters/outcomes, private atomic files, invalid/symlink/oversized files, distinct instances, inventory cap, collector loss, hung sampler, storage-permission recovery, freshness and terminal escaping; built viewers with invalid DB settings, JSONL watch cancellation and live MySQL/PG stdio/HTTP snapshots |
 | HTTP boundaries | Exact bearer matching, rejected Origin, protocol version, size and media types; SDK concurrent clients |
 
 ## Recorded evidence and limits
 
-The latest recorded full run is 2026-10-19, after dashboard implementation:
+The 2026-10-20 session implementation passed
+`MCP_INTEGRATION=true rtk proxy ./bin/check`: 38 ExUnit tests (34 core and two per
+adapter), both builds, official SDK checks, dashboard checks and the raw
+session/cancellation/framing probes. Session race checks also passed three
+explicit seeds. Local three-trial stdio measurements improved four concurrent
+200 ms reads from approximately 835 ms to 205–210 ms; this is not a production
+load claim. See [session evidence and limits](../.worklog/session-implementation-2026-10-20.md).
+
+The dashboard baseline was recorded on 2026-10-19:
 `MCP_INTEGRATION=true ./bin/check` passed all 24 ExUnit tests (20 core and two
 per adapter), both escript builds, official SDK stdio/HTTP and dashboard checks,
 and both raw timeout/framing probes. Dashboard publishing was enabled on both

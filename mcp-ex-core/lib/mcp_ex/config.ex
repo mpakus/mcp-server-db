@@ -56,7 +56,13 @@ defmodule McpEx.Config do
       origins: csv(env, "MCP_ALLOWED_ORIGINS"),
       dashboard: boolean(env, "MCP_DASHBOARD"),
       dashboard_dir: McpEx.Diagnostics.directory(env),
-      max_bytes: number(env, "MCP_MAX_REQUEST_BYTES", 1_048_576)
+      max_bytes: number(env, "MCP_MAX_REQUEST_BYTES", 1_048_576),
+      max_response_bytes: number(env, "MCP_MAX_RESPONSE_BYTES", 8_388_608),
+      max_sessions: number(env, "MCP_MAX_SESSIONS", 1000),
+      max_inflight: number(env, "MCP_MAX_INFLIGHT", 4),
+      session_idle_timeout: number(env, "MCP_SESSION_IDLE_TIMEOUT", 300_000),
+      request_timeout:
+        number(env, "MCP_REQUEST_TIMEOUT", min(connection[:timeout] + 1000, 2_147_483_647))
     }
   end
 

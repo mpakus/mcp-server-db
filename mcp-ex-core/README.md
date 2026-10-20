@@ -41,6 +41,11 @@ Booleans accept exactly `true` or `false`; invalid settings fail startup.
 | `MCP_DASHBOARD` | `false` | Enable private local diagnostic snapshots |
 | `MCP_DASHBOARD_DIR` | XDG state directory or `~/.local/state/mcp-ex` | Same private directory for publisher and viewer |
 | `MCP_MAX_REQUEST_BYTES` | `1048576` | Maximum SQL/message input bytes |
+| `MCP_MAX_RESPONSE_BYTES` | `8388608` | Encoded response cap; oversized results become RPC errors |
+| `MCP_MAX_SESSIONS` | `1000` | Maximum active sessions per server |
+| `MCP_MAX_INFLIGHT` | `4` | Maximum active query/resource workers per session |
+| `MCP_SESSION_IDLE_TIMEOUT` | `300000` | HTTP session idle expiry in milliseconds |
+| `MCP_REQUEST_TIMEOUT` | Query timeout + `1000` | Total query/resource worker deadline in milliseconds |
 
 Schema overrides replace each operation's global default. MySQL permission
 matching is case-insensitive and conflicting denies win. PostgreSQL unquoted
@@ -66,8 +71,11 @@ MySQL comments are refused to avoid sql_mode-dependent interpretation.
 Operation/schema checks apply to the explicit target. Database grants remain
 the authority for function, trigger, view and foreign-key effects. Native
 read-only enforcement constrains writes within the current transaction. There is
-no cross-call transaction/current-database state. Results return in full; use
-LIMIT for large reads. Timeouts bound work, not result size.
+no cross-call transaction/current-database state. Use LIMIT for large reads:
+the response-byte cap is checked after result materialization and does not bound
+peak driver or encoding memory. The small error envelope is exempt from that cap.
+Concurrent requests may finish in any order; await a write before issuing a
+dependent request. Cancellation or timeout does not prove that a write rolled back.
 
 ## PII and result encoding
 
@@ -93,14 +101,17 @@ stdio stdout contains only MCP messages.
 
 ## HTTP and parity
 
-POST `/mcp` returns stateless JSON responses. Headers:
+POST `/mcp` returns JSON responses. Headers:
 `Authorization: Bearer <REMOTE_SECRET_KEY>`, `Content-Type: application/json`,
 `Accept: application/json, text/event-stream`; send the negotiated
-`MCP-Protocol-Version` on subsequent requests. Notifications return 202; GET and
-DELETE return 405. No SSE subscriptions, sessions, prompts, OAuth server or
+`MCP-Protocol-Version` and returned `MCP-Session-Id` on subsequent requests.
+Both transports require initialize then notifications/initialized before work.
+Notifications return 202. DELETE terminates the session with 204; GET returns
+405 for a valid session. Missing session IDs return 400 and expired IDs return
+404, requiring a fresh initialization. No SSE subscriptions, prompts, OAuth server or
 resumability are advertised. Initialization supports MCP 2025-11-25,
 2025-06-18, 2025-03-26 and 2024-11-05.
-[Transport specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports).
+[Transport specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
 
 For public HTTP use, terminate HTTPS at a reverse proxy. Remote static bearer
 authentication follows the source's remote mode.
@@ -111,6 +122,14 @@ discovery. Native read-only protection cannot be disabled. Connection strings
 are database URLs, not mysql CLI commands. No dotenv loader, SSH-tunnel launcher,
 arbitrary DDL, or aliases for every mysql2 setting; use an external SSH tunnel.
 Pool size uses `*_POOL_SIZE`.
+
+`McpEx.Runtime` supervises the shared pool, Registry, bounded Task.Supervisor,
+DynamicSupervisor and HTTP listener. Each temporary `McpEx.Session` GenServer
+owns lifecycle/request tracking and receives results from query workers. The
+global worker cap equals pool size. Control messages stay responsive at capacity.
+Stdio uses bounded port buffers and one stdout writer; EOF drains accepted work.
+Session death kills its workers and invalidates its ID. Sessions are local to
+one VM; HTTP deployments with multiple instances need session affinity.
 
 ## Checks
 

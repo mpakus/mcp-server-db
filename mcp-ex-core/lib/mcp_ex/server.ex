@@ -1,5 +1,5 @@
 defmodule McpEx.Server do
-  @moduledoc "The database MCP request handlers, shared by stdio and stateless HTTP."
+  @moduledoc "The database MCP request handlers, shared by stdio and HTTP sessions."
   alias McpEx.{Config, Diagnostics, Policy, Redact}
   @versions ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
   def versions, do: @versions
@@ -55,6 +55,17 @@ defmodule McpEx.Server do
 
   def error(id, code, message),
     do: %{"jsonrpc" => "2.0", "id" => id, "error" => %{"code" => code, "message" => message}}
+
+  def encode(nil, _limit), do: nil
+
+  def encode(response, limit) do
+    encoded = Jason.encode_to_iodata!(response)
+
+    if IO.iodata_length(encoded) <= limit,
+      do: IO.iodata_to_binary(encoded),
+      else:
+        Jason.encode!(error(response["id"], -32000, "Response too large; use a smaller query"))
+  end
 
   defp dispatch("initialize", params, context) do
     version = params["protocolVersion"]

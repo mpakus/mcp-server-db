@@ -57,9 +57,9 @@ to port 3000, so use separate ports when running both. `MCP_HTTP_HOST` is a
 literal IP address, not a DNS hostname.
 
 The endpoint is `http://127.0.0.1:3000/mcp` or the selected port. It implements
-stateless MCP HTTP with JSON responses. Clients that require persistent sessions,
-GET SSE streams, resumability or OAuth discovery need capabilities this server
-does not supply. Use a client capable of authenticated stateless HTTP.
+MCP HTTP with JSON responses and in-memory sessions. Use a client that retains
+the `MCP-Session-Id` returned by initialization. GET SSE streams, resumability and
+OAuth discovery are not supplied.
 
 ## HTTP request contract
 
@@ -69,11 +69,11 @@ does not supply. Use a client capable of authenticated stateless HTTP.
 | `Content-Type` | `application/json`; media-type parameters are accepted |
 | `Accept` | Must include both `application/json` and `text/event-stream`, even though responses use JSON |
 | `MCP-Protocol-Version` | May be omitted; if supplied, one supported version. Use the negotiated version after initialization |
+| `MCP-Session-Id` | Returned on initialization; required on subsequent POST, GET and DELETE requests |
 | `Origin` | May be omitted; if supplied, one exact entry in `MCP_ALLOWED_ORIGINS` |
 
-No `Mcp-Session-Id` is issued or required. Initialize and notify normally for
-client compatibility, but the server does not carry lifecycle state across HTTP
-requests. Notifications return 202 with no body. Requests return 200 JSON even
+Initialize, retain the session ID, then send `notifications/initialized` before
+using tools/resources. Notifications return 202 with no body. Requests return 200 JSON even
 when their JSON-RPC envelope or tool result contains an error.
 
 In another shell, set the actual endpoint and bearer token, then initialize:
@@ -89,11 +89,14 @@ curl --silent --show-error --include "$MCP_ENDPOINT" \
 ```
 
 The examples request a supported version, so the returned version is
-`2025-11-25`. Send the notification:
+`2025-11-25`. Copy the `mcp-session-id` response header into `MCP_SESSION_ID`,
+then send the notification:
 
 ```sh
+export MCP_SESSION_ID='paste-the-returned-session-id'
 curl --silent --show-error --include "$MCP_ENDPOINT" \
   -H "Authorization: Bearer $REMOTE_SECRET_KEY" \
+  -H "MCP-Session-Id: $MCP_SESSION_ID" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'MCP-Protocol-Version: 2025-11-25' \
@@ -105,6 +108,7 @@ Discover tools or query MySQL:
 ```sh
 curl --silent --show-error "$MCP_ENDPOINT" \
   -H "Authorization: Bearer $REMOTE_SECRET_KEY" \
+  -H "MCP-Session-Id: $MCP_SESSION_ID" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'MCP-Protocol-Version: 2025-11-25' \
@@ -114,6 +118,7 @@ curl --silent --show-error "$MCP_ENDPOINT" \
 ```sh
 curl --silent --show-error "$MCP_ENDPOINT" \
   -H "Authorization: Bearer $REMOTE_SECRET_KEY" \
+  -H "MCP-Session-Id: $MCP_SESSION_ID" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -H 'MCP-Protocol-Version: 2025-11-25' \
@@ -124,10 +129,23 @@ For PostgreSQL, change the endpoint and tool name to `pg_query`. These requests
 do not depend on application tables. An HTTP 200 alone is insufficient to decide
 whether a query succeeded; inspect `error` and `result.isError`.
 
-Only `POST /mcp` is supported. GET, DELETE and OPTIONS return 405 after
-authentication/origin/version checks. Other paths return 404. An allowed Origin
+`DELETE /mcp` with the session ID terminates the session and returns 204.
+Valid-session GET and OPTIONS return 405. Other paths return 404. An allowed Origin
 does not add CORS response headers or support browser preflight. See the complete
 [HTTP status table](TROUBLESHOOTING.md#http-status-codes).
+
+Idle sessions expire after `MCP_SESSION_IDLE_TIMEOUT` (default five minutes);
+active queries keep their session alive. Expired/deleted/crashed sessions return
+404. Initialize afresh rather than reusing the old ID. Sessions are temporary
+supervisor children and are never silently restarted with empty state. A
+database-pool replacement invalidates dependent sessions and restarts the HTTP
+listener. Multiple server instances need session affinity; no cross-node
+session replication or durable recovery is supplied.
+
+`notifications/cancelled` with `params.requestId` stops that session's worker.
+The cancelled HTTP request finishes without a JSON-RPC response (202).
+Cancellation/deadline/disconnect cannot establish whether a write committed;
+inspect database state before retrying. Dependent writes must be awaited in order.
 
 ## Network exposure
 
@@ -137,7 +155,7 @@ access at the network boundary. The included Compose file provisions test
 databases only; it is not an application deployment stack.
 
 For network clients, configure a reverse proxy to terminate HTTPS, route `/mcp`
-POST bodies and responses, preserve Authorization and protocol headers, and
+POST/DELETE bodies and responses, preserve Authorization, session and protocol headers, and
 apply suitable request/concurrency limits. The application has no HTTPS listener
 configuration or built-in rate limiter. Configure exact Origin values when
 clients send them, for example:

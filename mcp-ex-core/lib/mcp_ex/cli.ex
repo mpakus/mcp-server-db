@@ -32,8 +32,8 @@ defmodule McpEx.CLI do
     if remote and (is_nil(config.secret) or config.secret == ""),
       do: raise(ArgumentError, "REMOTE_SECRET_KEY is required in HTTP mode")
 
-    {:ok, pool} = adapter.start_link(config)
-    context = %{pool: pool, adapter: adapter, config: config}
+    context = McpEx.Runtime.context(config, adapter)
+    {:ok, runtime} = McpEx.Runtime.start_link(context)
     probe_started = System.monotonic_time(:microsecond)
     McpEx.Server.execute!(context, "SELECT 1", [], :read)
     probe_ms = (System.monotonic_time(:microsecond) - probe_started) / 1000
@@ -48,18 +48,21 @@ defmodule McpEx.CLI do
     try do
       if transport == "http" do
         {:ok, _} =
-          Bandit.start_link(
-            plug: {McpEx.HTTP, context},
-            ip: config.http_ip,
-            port: config.http_port
+          Supervisor.start_child(
+            runtime,
+            {Bandit, plug: {McpEx.HTTP, context}, ip: config.http_ip, port: config.http_port}
           )
 
         Process.sleep(:infinity)
       else
-        stdio(context, :new)
+        case McpEx.Stdio.run(context) do
+          :ok -> :ok
+          {:error, _} -> System.halt(1)
+        end
       end
     after
       McpEx.Diagnostics.stop(diagnostics)
+      Supervisor.stop(runtime)
     end
   end
 
@@ -71,48 +74,5 @@ defmodule McpEx.CLI do
 
     IO.puts(:stderr, message)
     System.halt(1)
-  end
-
-  defp stdio(context, state) do
-    case line(context.config.max_bytes, [], 0) do
-      :eof ->
-        :ok
-
-      {:error, reason} ->
-        McpEx.Diagnostics.count(
-          context,
-          if(reason == "Request too large", do: "oversize_errors", else: "parse_errors")
-        )
-
-        IO.puts(Jason.encode!(McpEx.Server.error(nil, -32700, reason)))
-        if reason == "Request too large", do: System.halt(1), else: stdio(context, state)
-
-      {:ok, line} ->
-        {response, next} =
-          case Jason.decode(line) do
-            {:ok, message} ->
-              McpEx.Server.handle(message, context, state)
-
-            _ ->
-              McpEx.Diagnostics.count(context, "parse_errors")
-              {McpEx.Server.error(nil, -32700, "Invalid JSON"), state}
-          end
-
-        if response, do: IO.puts(Jason.encode!(response))
-        stdio(context, next)
-    end
-  end
-
-  # ponytail: byte-at-a-time input bounds memory; switch to a buffered port if stdio throughput becomes material.
-  defp line(limit, _, size) when size > limit, do: {:error, "Request too large"}
-
-  defp line(limit, acc, size) do
-    case IO.binread(:stdio, 1) do
-      :eof when acc == [] -> :eof
-      :eof -> {:ok, acc |> Enum.reverse() |> IO.iodata_to_binary()}
-      {:error, _} -> {:error, "Input read failed"}
-      "\n" -> {:ok, acc |> Enum.reverse() |> IO.iodata_to_binary()}
-      byte -> line(limit, [byte | acc], size + 1)
-    end
   end
 end

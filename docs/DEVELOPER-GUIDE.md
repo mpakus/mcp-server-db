@@ -14,7 +14,10 @@ no Ecto layer, Phoenix application, web UI or custom database protocol.
 | [`policy.ex`](../mcp-ex-core/lib/mcp_ex/policy.ex) | SQL lexer, single-statement classification, target checks and PII query guards |
 | [`redact.ex`](../mcp-ex-core/lib/mcp_ex/redact.ex) | Database value normalization, sensitive-name detection, recursive masks and metadata filtering |
 | [`server.ex`](../mcp-ex-core/lib/mcp_ex/server.ex) | JSON-RPC dispatch, initialization, tools, resources, result envelopes and safe errors |
-| [`cli.ex`](../mcp-ex-core/lib/mcp_ex/cli.ex) | Escript lifecycle, pool startup/probe, transport choice and bounded stdio input |
+| [`cli.ex`](../mcp-ex-core/lib/mcp_ex/cli.ex) | Escript lifecycle, runtime startup/probe and transport choice |
+| [`runtime.ex`](../mcp-ex-core/lib/mcp_ex/runtime.ex) | Rest-for-one supervision of the pool, Registry, workers, sessions and HTTP listener |
+| [`session.ex`](../mcp-ex-core/lib/mcp_ex/session.ex) | Per-session lifecycle, active request IDs, bounded workers, cancellation, deadlines and idle expiry |
+| [`stdio.ex`](../mcp-ex-core/lib/mcp_ex/stdio.ex) | Bounded raw input chunks, newline framing and one stdout writer |
 | [`diagnostics.ex`](../mcp-ex-core/lib/mcp_ex/diagnostics.ex) | Optional ETS counters, private snapshots and bounded samplers |
 | [`monitor.ex`](../mcp-ex-core/lib/mcp_ex/monitor.ex) | Status/resources rendering, JSON/watch, freshness and exit codes |
 | [`http.ex`](../mcp-ex-core/lib/mcp_ex/http.ex) | Plug handler, auth/origin/version checks, media types and bounded HTTP body handling |
@@ -37,25 +40,48 @@ own tests. Keep all three source folders together and fetch dependencies in each
 flowchart TD
   Client["MCP client"] --> Stdio["CLI stdio framing"]
   Client --> Http["HTTP Plug checks"]
-  Stdio --> Server["Shared JSON-RPC dispatcher"]
-  Http --> Server
+  Stdio --> Session["Session GenServer"]
+  Http --> Session
+  Session --> Worker["Bounded supervised query workers"]
+  Worker --> Server["Shared JSON-RPC dispatcher"]
+  Worker -->|"Result or DOWN"| Session
   Server --> Policy["SQL policy and permissions"]
   Policy --> Adapter["MySQL or PostgreSQL adapter"]
   Adapter --> Pool["Driver pool and transaction"]
   Pool --> Database["Database"]
   Database --> Result["Driver result"]
   Result --> Redact["Normalization and PII masking"]
-  Redact --> Server
-  Server --> Client
+  Redact --> Worker
+  Session -->|"Response by request ID"| Client
 ```
 
 At startup, the dialect-specific CLI delegates to `McpEx.CLI.main/2`, which
 first dispatches `status`/`resources` into the snapshot viewer. Server launch
-validates configuration, starts the adapter pool and probes it through the
+validates configuration, starts `McpEx.Runtime` and probes its shared pool through the
 read-only execution path. Optional diagnostics starts after this probe, unlinked
 from the CLI owner, and monitors that owner for cleanup. The CLI then enters the stdio loop or starts Bandit with
-the context map as Plug options. Driver/library processes are linked; no custom
-OTP Application supervisor or release lifecycle is defined.
+the context map as Plug options. The runtime uses `:rest_for_one` with the pool,
+Registry, Task.Supervisor, DynamicSupervisor and Bandit in dependency order.
+Replacing a dependency shuts down its dependent sessions and listener before
+restarting them. Pool references use a registered name so restarts do not leave
+stale PIDs in the context. Diagnostics remains an optional isolated observer.
+
+Each session is a temporary GenServer: a crash invalidates the ID rather than
+restarting empty state. A unique Registry resolves secure HTTP session IDs.
+The session serializes lifecycle/control messages and starts query/resource
+tasks under a shared Task.Supervisor. Global tasks are capped at pool size;
+per-session work defaults to four. Capacity failures reject work immediately.
+Tasks link to the session and are monitored. The session traps task exits,
+handles result/DOWN/deadline messages, and kills workers on termination. Links
+also clean up workers if the session is killed before its terminate callback.
+No task or database write is automatically retried.
+
+Stdio has one session per executable. Its CLI process reads bounded chunks and
+writes complete response frames while workers run separately. The escripts
+embed `-noinput` to disable OTP's competing stdin reader before opening the fd
+port. EOF drains admitted work, including a final frame without a newline.
+HTTP disconnects do not end logical sessions; explicit DELETE and idle expiry do.
+Multiple stdio launches still have separate VMs and separate pools.
 
 For `tools/call`, the server validates the tool and arguments, checks policy,
 executes the classified mode, builds row maps, filters SQL column metadata when
@@ -84,10 +110,14 @@ details out of the core.
 | `pool_metrics(context)` | Returns DBConnection metric maps with `ready_conn_count` and `checkout_queue_length`; only the bounded diagnostic worker calls it |
 | `columns(context, schema, table)` | Returns a driver result with canonical lowercase column aliases in ordinal order |
 
-The context map is `%{pool: pool, adapter: adapter_module, config: config}`
+The request-handler context is `%{pool: pool, adapter: adapter_module, config: config}`
 with optional `diagnostics: %{pid: publisher, table: ets_table}`. Missing/disabled
 diagnostics are no-ops. Sampling contexts deliberately omit credentials, HTTP
 tokens and the diagnostics handle.
+Transport contexts additionally carry `registry`, `sessions` and `tasks`
+supervisor references. Session messages carry either a GenServer call recipient
+for HTTP or the stdio writer PID; the session tracks these by request ID and
+worker monitor reference. Only bounded encoded responses cross back from workers.
 The result needs `columns`, `rows` and `num_rows`; MySQL may also provide
 `last_insert_id`. `columns: nil` selects the command-result envelope. Otherwise
 `McpEx.Server.rows/1` zips column names and each row into a map; duplicate names
@@ -104,10 +134,12 @@ Write target extraction accepts at most two name components; keep third-componen
 rejection in that shared path for every write/DDL classifier. File-SQL guards
 inspect words and quoted identifiers while leaving literal values alone.
 
-`McpEx.Server.handle/3` returns `{response_or_nil, next_state}`. Stdio passes
+`McpEx.Server.handle/3` returns `{response_or_nil, next_state}`. Sessions pass
 `:new`, transitions to `:initializing` on initialization, then to `:ready` on
-`notifications/initialized`. HTTP calls the default `:ready` handler separately
-for each request. Incoming client response envelopes are ignored. Notifications
+`notifications/initialized`. HTTP validates initialization before allocating a
+session and installs the negotiated version and `:initializing` state atomically.
+Ready sessions dispatch independent work with the `:ready` handler in workers.
+Incoming client response envelopes are ignored. Notifications
 normally produce no response.
 
 `Redact.normalize/1` runs independently of PII mode. `Redact.apply/2` adds
@@ -166,7 +198,7 @@ For a quick source launch inside the MySQL application, after exporting its
 database environment:
 
 ```sh
-(cd mcp-ex-mysql && rtk proxy mix run -e 'McpEx.Mysql.CLI.main(["--stdio"])')
+(cd mcp-ex-mysql && ERL_FLAGS=-noinput rtk proxy mix run -e 'McpEx.Mysql.CLI.main(["--stdio"])')
 ```
 
 Substitute the PG directory and `McpEx.Pg.CLI` for PostgreSQL. Source launch can
@@ -256,7 +288,7 @@ resource URIs, working root reads, exact bearer comparison and redaction of
 write results. Deliberate differences include default-scoped discovery,
 database-URL-only connection strings, external dotenv/tunnel handling, strict
 write shapes and read-only enforcement that cannot be disabled. No arbitrary
-DDL, mysql2 option aliases, HTTP sessions, prompts or OAuth service are supplied.
+DDL, mysql2 option aliases, durable sessions, prompts or OAuth service are supplied.
 
 See [recorded test evidence](TESTING.md#recorded-evidence-and-limits) before
 claiming support for a new runtime, database version, TLS setup or socket path.

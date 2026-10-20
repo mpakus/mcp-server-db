@@ -1,7 +1,7 @@
 # mcp-ex-pg
 
 Elixir/Postgrex MCP server with `pg_query`, schema resources, stdio and
-authenticated stateless HTTP. Keep `../mcp-ex-core` beside this project.
+authenticated HTTP with supervised MCP sessions. Keep `../mcp-ex-core` beside this project.
 
 ## Documentation
 

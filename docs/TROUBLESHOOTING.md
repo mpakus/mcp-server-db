@@ -101,19 +101,28 @@ Accept, Content-Type, body size/JSON. Fix the earliest failing check first.
 | --- | --- |
 | `200` | JSON-RPC response, including RPC errors or failed tool results; inspect the body |
 | `202` | Accepted notification/client response envelope; no body |
-| `400` | Unsupported/duplicate protocol header, unreadable body or malformed JSON; malformed JSON uses RPC code -32700 |
+| `204` | Session terminated by DELETE |
+| `400` | Missing session ID, mismatched/unsupported/duplicate protocol header, unreadable body or malformed JSON; malformed JSON uses RPC code -32700 |
 | `401` | Missing/duplicate/wrong Authorization; the prefix is exactly `Bearer ` and the token must match exactly |
 | `403` | Origin not in the exact allowlist, or multiple Origin values |
-| `404` | Wrong path; use `/mcp` |
-| `405` | Authenticated request uses a method other than POST; `Allow: POST` is returned |
+| `404` | Wrong path or unknown/expired session; use `/mcp` and initialize a new session |
+| `405` | Unsupported method or GET with a valid session; `Allow: POST, DELETE` |
 | `406` | Accept omits `application/json` or `text/event-stream` |
 | `413` | Body exceeds `MCP_MAX_REQUEST_BYTES` |
 | `415` | Content-Type is not application/json |
+| `503` | Session capacity reached; close unused sessions or wait for idle expiry |
 
 Use the [curl examples](OPERATIONS.md#http-request-contract) to separate client
 configuration errors from server behavior. A browser OPTIONS preflight is
 unsupported even with an allowed Origin. An unauthenticated GET returns 401
 before the method check; that does not mean a GET stream is supported.
+
+`Server busy; retry later` is a JSON-RPC error when query workers reach a
+per-session or global limit. No SQL is started for that rejected request.
+`Request timed out` stops the worker at the total request deadline.
+`Response too large` asks for a smaller projection or row limit; a write may
+already have committed before response encoding. None of these cases triggers
+automatic retries. An expired session also does not replay earlier work.
 
 ## JSON-RPC and tool errors
 

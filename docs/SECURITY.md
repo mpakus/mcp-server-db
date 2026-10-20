@@ -226,16 +226,23 @@ per-message authentication. HTTP requires one exact `Bearer <token>` header,
 rejects unapproved Origin values and limits request bodies. All HTTP clients
 using a token share the same configured database identity and permission set.
 There is no per-client role, OAuth server, token-expiration store or session ACL.
+Session IDs are cryptographically random lookup keys, not credentials; every
+HTTP request still passes bearer and Origin checks. Keep IDs private.
 
 HTTP defaults to loopback and serves plain HTTP. Terminate HTTPS at a reverse
 proxy for network exposure. Database TLS is configured separately. Origin
 checking does not authenticate a caller that can omit the header. Browser CORS
 preflight and GET event streams are unsupported. See [Operations](OPERATIONS.md).
 
-Request limits and timeouts bound input/work, not output size or client
-concurrency. Table/resource lists and query results are returned in full, without
-pagination, rate limiting or a result-byte cap. Use database restrictions,
-explicit columns and bounded queries for large or shared deployments.
+Sessions and active query/resource workers have configurable limits; the global
+worker cap equals pool size. Encoded responses default to an 8 MiB cap, checked
+after materialization. This does not bound peak driver/encoding memory. Table
+and query results have no pagination; use explicit columns, LIMIT and database
+restrictions. Use a proxy for HTTP connection/rate limits.
+
+Cancellation, deadlines and session termination stop local workers. They do not
+prove rollback of an already committed write or MySQL DDL. No request is
+automatically retried. Confirm uncertain write outcomes before retrying.
 
 
 ## Local dashboard snapshots

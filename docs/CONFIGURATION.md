@@ -163,6 +163,11 @@ export PII_EXTRA_COLUMN_PATTERNS='^billing_;national_id$'
 | `PORT` | `3000` | HTTP listen port, 1–65535; applies to both applications |
 | `MCP_ALLOWED_ORIGINS` | Empty | CSV of exact permitted Origin header values; no wildcards |
 | `MCP_MAX_REQUEST_BYTES` | `1048576` | Maximum HTTP body/stdio frame and independent SQL byte length check |
+| `MCP_MAX_RESPONSE_BYTES` | `8388608` | Maximum encoded response bytes; oversized results become a small RPC error |
+| `MCP_MAX_SESSIONS` | `1000` | Maximum active session processes per server |
+| `MCP_MAX_INFLIGHT` | `4` | Active query/resource workers per session; excess requests receive a busy RPC error |
+| `MCP_SESSION_IDLE_TIMEOUT` | `300000` | HTTP idle session lifetime in milliseconds; active work prevents expiry |
+| `MCP_REQUEST_TIMEOUT` | Query timeout + `1000` | Total query/resource worker deadline, including checkout and result encoding, in milliseconds |
 
 `--http` selects HTTP without needing `IS_REMOTE_MCP=true`, but still requires
 `REMOTE_SECRET_KEY`. `--stdio` overrides transport selection; however,
@@ -179,7 +184,16 @@ support. See [HTTP headers and status codes](OPERATIONS.md#http-request-contract
 The request limit measures bytes, not characters. A JSON body has overhead
 beyond its SQL string, so SQL at the limit may not fit in a transport frame.
 Oversized stdio input emits a parse error and exits; HTTP rejects it with 413.
-There is no corresponding result-byte limit.
+The response limit is checked after result materialization, so it bounds sent
+responses rather than peak database/encoding memory. Its error envelope is
+exempt. All six limits/timeouts above accept positive integers up to 2147483647.
+The default request timeout is capped at that maximum.
+
+The global query/resource worker limit equals `MYSQL_POOL_SIZE` or `PG_POOL_SIZE`;
+all sessions share that pool. Worker and session capacity errors reject new work
+instead of growing a work queue. These are not connection or request-rate limits;
+apply those at the HTTP proxy. Stdio sessions live until EOF/owner exit and do not
+use the HTTP idle timer. Await each dependent write before issuing the next.
 
 ## Dashboard
 

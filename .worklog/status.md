@@ -168,3 +168,47 @@ privacy, file-level work and acceptance tests are in
 Details and known limits: [dashboard-2026-10-19.md](dashboard-2026-10-19.md).
 No production/load/overhead benchmark, full-disk fault injection or remote admin
 interface is claimed. Earlier TLS/socket/deployment validation limits remain.
+
+## Performance and OTP review — 2026-10-20
+
+Reviewed session state, process ownership, supervision, database pooling and
+request execution. HTTP is stateless and concurrent across connections; stdio
+keeps lifecycle state in a serial recursive loop. Diagnostics explicitly uses
+a GenServer, spawned workers, messages, monitors and timers.
+
+The full check passed 24 tests, both builds and SDK/diagnostics/transport checks.
+A separate three-trial local probe reproduced stdio head-of-line blocking and
+large framing overhead: four 200 ms queries took about 835 ms over stdio versus
+210 ms over HTTP; a 256 KiB padded ping took 4.4–4.6 seconds over stdio versus
+1–2 ms over HTTP. No application code was changed.
+
+Evidence, source anchors, reproduction script and scope limits are in
+[performance-review-2026-10-20.md](performance-review-2026-10-20.md).
+
+## Elixir skills installed — 2026-10-20
+
+Searched and reviewed community skills for Elixir/OTP/BEAM and Erlang. Installed
+`staff-level-elixir` and `erlang-best-practice` into the personal Codex skills
+directory from exact reviewed commits. All 32 installed files match the review
+copies, metadata parses correctly and local references resolve. No executable
+scripts or hooks were installed. Sources, rejected alternatives and limitations
+are recorded in [elixir-skills-2026-10-20.md](elixir-skills-2026-10-20.md).
+
+## Supervised MCP sessions — 2026-10-20
+
+Implemented one temporary GenServer per logical MCP session, a shared registered
+pool, Registry, bounded supervised query workers and dependent-component
+supervision. Both transports retain initialization/version state. HTTP adds
+session IDs, DELETE and idle expiry; stdio adds bounded raw input with exclusive
+stdin ownership and response draining on EOF. Cancellation, request deadlines,
+duplicate-ID protection, response-byte and session/worker limits are in place.
+
+The first integration run passed existing SDK/dashboard checks and confirmed
+responsive stdio pings. New framing tests caught competing OTP stdin ownership;
+the escripts now embed `-noinput`, and a Registry death race is also fixed.
+Final verification passed 38 ExUnit tests, both builds, official SDK and
+dashboard checks, plus real cancellation/framing/EOF/session tests on both
+databases. The independent local probe reduced four concurrent 200 ms stdio
+queries from about 835 ms to 205–210 ms and 256 KiB pings from 4.4–4.6 seconds
+to 0.7–1.4 ms. Disposable fixtures were removed. Exact results and limits are in
+[session-implementation-2026-10-20.md](session-implementation-2026-10-20.md).

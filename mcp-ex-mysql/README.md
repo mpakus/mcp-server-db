@@ -1,7 +1,7 @@
 # mcp-ex-mysql
 
 Elixir/MyXQL MCP server with `mysql_query`, schema resources, stdio and
-authenticated stateless HTTP. Keep `../mcp-ex-core` beside this project.
+authenticated HTTP with supervised MCP sessions. Keep `../mcp-ex-core` beside this project.
 
 ## Documentation
 

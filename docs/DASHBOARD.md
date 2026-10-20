@@ -85,6 +85,11 @@ docker compose -f compose.test.yml down
 
 ## Reading the view
 
+Counters describe completed dispatcher work. Session admission errors,
+cancellation notifications, killed workers and response-cap errors are not
+included in dispatcher completion totals. The dashboard does not expose active
+session identities or SQL.
+
 | Field | Meaning |
 | --- | --- |
 | Instance / PID | Random per-start identity and informational OS PID; PID reuse is never used to decide liveness |
@@ -92,7 +97,7 @@ docker compose -f compose.test.yml down
 | Database | Configured host, port, database, schema, write-capability hint and PII flag; socket transport still shows the configured host/port |
 | Health | Last read-only `SELECT 1` result and check age; a timeout can mean pool pressure rather than an unreachable database; JSON also reports the last successful probe timestamp/duration |
 | Pool | Ready connections / configured pool size, and checkout queue length; these are sampled DBConnection values, not active clients |
-| RPC | Completed response-producing requests, JSON-RPC errors, and valid notifications; incoming response envelopes are ignored |
+| RPC | Completed dispatcher requests, JSON-RPC errors, and valid dispatcher notifications; incoming response envelopes are ignored |
 | Tools | Completed calls to the known SQL tool, success/failure totals and elapsed average/max |
 | Failures | Tool argument validation, policy rejection, driver operation failure, or result-processing failure |
 | Query attempts | Read/write/DDL driver calls after successful policy validation; neither executed statements nor committed writes are guaranteed |

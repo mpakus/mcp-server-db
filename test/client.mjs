@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkDashboard } from "./dashboard.mjs";
+import { checkSessionStdio, checkSessionHttp } from "./sessions.mjs";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -67,10 +68,10 @@ async function checkStdioTimeout(target) {
     assert.equal(signal, null, stderr);
     assert.equal(code, 0, stderr);
     const responses = stdout.trimEnd().split("\n").map(line => JSON.parse(line));
-    assert.deepEqual(responses.map(response => response.id), [1, 2, 3]);
-    assert.equal(responses[1].result.isError, true);
-    assert.match(responses[1].result.content[0].text, /^Error: Database operation failed/);
-    assert.deepEqual(responses[2].result, {});
+    assert.deepEqual(responses.map(response => response.id), [1, 3, 2]);
+    assert.equal(responses[2].result.isError, true);
+    assert.match(responses[2].result.content[0].text, /^Error: Database operation failed/);
+    assert.deepEqual(responses[1].result, {});
     if (target.app === "mysql") assert.match(stderr, /MyXQL\.Connection.*disconnected:/);
     console.log(`${target.app}: stdio timeout, JSON-only stdout and EOF checks passed`);
   } finally {
@@ -92,6 +93,7 @@ for (const target of targets) {
   }
 
   await checkStdioTimeout(target);
+  await checkSessionStdio(target, executable(target), environment(target));
 
   const process = spawn(executable(target), ["--http"], { env: { ...environment(target), REMOTE_SECRET_KEY: "interop-test-token", PORT: String(target.http) }, stdio: ["ignore", "pipe", "pipe"] });
   let logs = "";
@@ -114,6 +116,7 @@ for (const target of targets) {
       await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: "Bearer interop-test-token" } } }));
     }
     await Promise.all(clients.map(client => exercise(client, target)));
+    await checkSessionHttp(target, url);
     const wrongToken = await fetch(url, { method: "POST", headers: { Authorization: "Bearer prefix-interop-test-token", "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) });
     assert.equal(wrongToken.status, 401);
     const badOrigin = await fetch(url, { headers: { Authorization: "Bearer interop-test-token", Origin: "https://evil.test" } });

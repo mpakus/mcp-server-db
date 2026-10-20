@@ -9,3 +9,5 @@ BEGIN
   RETURN 1;
 END;
 $$;
+CREATE FUNCTION mcp_test_sleep(double precision) RETURNS void
+LANGUAGE sql AS $$ SELECT pg_sleep($1); $$;

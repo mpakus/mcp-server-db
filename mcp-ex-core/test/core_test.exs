@@ -324,6 +324,17 @@ defmodule McpEx.CoreTest do
     end
   end
 
+  test "session limits and deadlines reject invalid configuration" do
+    for key <-
+          ~w(MCP_MAX_RESPONSE_BYTES MCP_MAX_SESSIONS MCP_MAX_INFLIGHT MCP_SESSION_IDLE_TIMEOUT MCP_REQUEST_TIMEOUT),
+        value <- ["0", "-1", "bad", "2147483648"] do
+      assert_raise ArgumentError, fn -> config(%{key => value}) end
+    end
+
+    assert config(%{"MYSQL_QUERY_TIMEOUT" => "500"}).request_timeout == 1500
+    assert config(%{"MYSQL_QUERY_TIMEOUT" => "2147483647"}).request_timeout == 2_147_483_647
+  end
+
   test "schema-qualified URIs, root contents and PII schema filtering" do
     ctx = context(config(%{"ENABLE_PII_REDACTION" => "true"}))
     {response, _} = Server.handle(request("resources/list"), ctx)
@@ -356,7 +367,7 @@ defmodule McpEx.CoreTest do
       |> Plug.Conn.put_req_header("content-type", "application/json")
     end
 
-    assert McpEx.HTTP.call(base.(), ctx).status == 200
+    assert McpEx.HTTP.call(base.(), ctx).status == 400
 
     for token <- ["Bearer prefix-test-token", "Bearer token", "Basic test-token"] do
       assert base.()

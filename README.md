@@ -2,13 +2,17 @@
 
 Connect an MCP client to MySQL or PostgreSQL through SQL tools and table metadata
 resources. Both servers are written in Elixir, run over stdio or authenticated
-stateless HTTP, and disable writes by default.
+HTTP, with a supervised Elixir process per MCP session. Writes are disabled by default.
 
 Status as of 2026-10-19: the three defects from the
 [completion audit](.worklog/audit-2026-10-19.md) are fixed, runtime security
 dependencies are patched, and the full check and Hex audits pass. Both escripts now include an optional
 [local CLI dashboard](docs/DASHBOARD.md). See the
 [fix log](.worklog/fixes-2026-10-19.md) for regression evidence and verification limits.
+
+2026-10-20: both transports now use supervised MCP session processes and bounded
+query workers. Stdio input is buffered and pings remain responsive during SQL.
+See the [session implementation and measurements](.worklog/session-implementation-2026-10-20.md).
 
 | Project | Purpose | Tool | Resource URI |
 | --- | --- | --- | --- |
@@ -108,11 +112,13 @@ implicitly commits.
 Optional PII mode guards SQL identifiers, filters column metadata and masks
 returned values. Detection is heuristic. Database grants govern indirect effects
 through functions, triggers and views. The SQL policy deliberately rejects
-ambiguous or unsupported statements. Results have no pagination or byte limit;
+ambiguous or unsupported statements. Responses default to an 8 MiB limit and have no pagination;
 use explicit projections and `LIMIT`. See the [security guide](docs/SECURITY.md).
 
 HTTP uses `POST /mcp`, exact static bearer authentication and JSON responses.
-It has no SSE stream, session storage, OAuth server or browser CORS preflight.
+Initialization issues an `MCP-Session-Id` that clients reuse on subsequent requests.
+Sessions support cancellation and DELETE, and expire after five idle minutes by
+default. There is no SSE stream, durable session storage, OAuth server or browser CORS preflight.
 See [HTTP operation](docs/OPERATIONS.md#run-http) for headers and examples.
 
 ## Verify
