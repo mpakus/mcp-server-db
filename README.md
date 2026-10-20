@@ -121,6 +121,39 @@ Sessions support cancellation and DELETE, and expire after five idle minutes by
 default. There is no SSE stream, durable session storage, OAuth server or browser CORS preflight.
 See [HTTP operation](docs/OPERATIONS.md#run-http) for headers and examples.
 
+## Performance before and after MCP sessions
+
+Benchmarked on 2026-10-20 using clean builds of `b542550` (before) and `9646c0a`
+(after session processes, bounded query workers and buffered stdio). Values below
+are **before → after, in milliseconds**, using the median of five samples after
+ten warm-up queries. Lower is better.
+
+| Server | Transport | `SELECT 1` | Four concurrent 200 ms queries | Ping behind a 300 ms query | Ping with 256 KiB input padding |
+| --- | --- | ---: | ---: | ---: | ---: |
+| MySQL | stdio | 1.77 → 1.16 | 831.15 → 206.93 | 278.76 → 0.39 | 4,531.43 → 1.03 |
+| PostgreSQL | stdio | 1.83 → 1.60 | 839.04 → 208.38 | 277.39 → 0.36 | 4,311.52 → 1.11 |
+| MySQL | HTTP | 1.99 → 1.66 | 208.12 → 207.94 | 2.13 → 2.09 | 1.50 → 1.27 |
+| PostgreSQL | HTTP | 2.22 → 2.09 | 208.40 → 211.19 | 1.49 → 1.72 | 0.99 → 1.38 |
+
+Stdio completed the four-query batch **about 4× faster** on both servers.
+Pings finished ahead of the slow query in every after sample; previously stdio
+pings waited for it. Buffered input reduced the large padded ping from over four
+seconds to about one millisecond. HTTP already handled concurrent requests, and
+its batch latency remained around 208–211 ms.
+
+Both revisions used the same disposable Docker fixtures, pool size 10, one
+client/session at a time, and disabled dashboard/PII redaction; the new session
+allowed four query workers. Host: Apple M5 Max, 64 GiB RAM, macOS 27.0.1,
+Erlang 28.5 / Elixir 1.20.4; databases: MySQL 8.4.11 and PostgreSQL 16.15.
+Initialization/startup is excluded. The ping was sent 30 ms after the slow query.
+
+These local sleep-query and framing tests measure concurrency and latency, not
+production SQL throughput. Five samples do not establish tail latency or the
+significance of small timing differences. CPU/memory usage and sustained load
+were not measured. See [methodology and reproduction](docs/benchmarks/README.md),
+[all samples and environment](docs/benchmarks/session-processes-2026-10-20.json),
+and the [benchmark harness](test/benchmark.mjs).
+
 ## Verify
 
 After fetching dependencies for all three projects:

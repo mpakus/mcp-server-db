@@ -212,3 +212,26 @@ databases. The independent local probe reduced four concurrent 200 ms stdio
 queries from about 835 ms to 205–210 ms and 256 KiB pings from 4.4–4.6 seconds
 to 0.7–1.4 ms. Disposable fixtures were removed. Exact results and limits are in
 [session-implementation-2026-10-20.md](session-implementation-2026-10-20.md).
+
+## Repeated before/after benchmarks — 2026-10-20
+
+Built clean archived copies of `b542550` and `9646c0a` with identical lockfiles
+and fresh compilation. Benchmarked both adapters over stdio and HTTP against
+the same disposable fixtures, with five samples per workload and ten warm-up
+queries. The shared harness checked 528 JSON-RPC responses; all eight scenarios
+completed, producing 280 timing samples and 40 observed query/ping orders.
+
+The stdio four-query batch improved from 831.15 to 206.93 ms for MySQL and
+839.04 to 208.38 ms for PostgreSQL. Slow-query ping latency dropped below 0.4 ms,
+and 256 KiB input latency fell from 4.3–4.5 seconds to about 1 ms. HTTP batch
+latency remained 208–211 ms. Added the comparison to the root README and saved
+the [raw samples/environment](../docs/benchmarks/session-processes-2026-10-20.json),
+[reproduction instructions](../docs/benchmarks/README.md) and
+[assert-based harness](../test/benchmark.mjs). These are local latency probes;
+CPU/memory, production workloads, sustained throughput and tail latency remain
+unmeasured. No application code was changed.
+
+Validation: all README medians match the saved samples, benchmark JavaScript
+and documented shell blocks parse, local documentation links resolve and
+`git diff --check` passes. Removed disposable containers/network and isolated
+build directories; retained the source revisions, build log and raw evidence.
