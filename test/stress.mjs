@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const exec = promisify(execFile);
 const round = n => Math.round(n * 100) / 100;
 const init = { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "local-stress", version: "1" } };
-const targets = {
+export const targets = {
   mysql: { app: "mysql", prefix: "MYSQL", port: 13307, http: 13107, placeholder: "?" },
   pg: { app: "pg", prefix: "PG", port: 15433, http: 13108, placeholder: "$1" },
 };
@@ -64,8 +64,8 @@ function httpClient(target) {
   };
 }
 
-async function startServer(target, transport, config) {
-  const child = spawn(`${root}mcp-ex-${target.app}/mcp-ex-${target.app}`, [`--${transport}`], {
+export async function startServer(target, transport, config) {
+  const child = spawn(target.executable || `${root}mcp-ex-${target.app}/mcp-ex-${target.app}`, [`--${transport}`], {
     cwd: root, stdio: ["pipe", "pipe", "pipe"], env: {
       PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8",
       [`${target.prefix}_HOST`]: "127.0.0.1", [`${target.prefix}_PORT`]: String(target.port),
@@ -138,7 +138,7 @@ async function startServer(target, transport, config) {
         await delay(100);
       }
       assert(ready, "HTTP server not ready");
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < (config.sessions || 4); i++) {
         const worker = new Worker(new URL(import.meta.url), { workerData: target });
         workers.push(worker);
         await receive(worker);
@@ -217,7 +217,7 @@ function percentile(histogram, count, fraction) {
   return null;
 }
 
-async function phase(server, target, transport, config, stage, concurrency, seconds, workload = "select1") {
+export async function phase(server, target, transport, config, stage, concurrency, seconds, workload = "select1") {
   const before = await processInfo(server.child.pid);
   let peakRss = before.rssKiB, sampling = false, samplingError;
   const sampler = setInterval(async () => {
@@ -234,7 +234,8 @@ async function phase(server, target, transport, config, stage, concurrency, seco
       ? [await load(server.client, target, concurrency, seconds, workload)]
       : await Promise.all(server.workers.map((worker, i) => {
         const result = receive(worker);
-        worker.postMessage({ concurrency: Math.floor(concurrency / 4) + (i < concurrency % 4 ? 1 : 0), seconds, workload });
+        const count = server.workers.length;
+        worker.postMessage({ concurrency: Math.floor(concurrency / count) + (i < concurrency % count ? 1 : 0), seconds, workload });
         return result;
       }));
   } finally { clearInterval(sampler); }
@@ -251,7 +252,7 @@ async function phase(server, target, transport, config, stage, concurrency, seco
   }
   const result = {
     app: target.app, transport, stage, workload, ...config, concurrency,
-    http_sessions: transport === "http" ? 4 : 0, generator_threads: transport === "http" ? 4 : 1,
+    http_sessions: server.workers.length, generator_threads: server.workers.length || 1,
     requested_seconds: seconds, elapsed_seconds: elapsed,
     successful: sum("ok"), busy: sum("busy"), errors: sum("errors"), successful_rps: round(sum("ok") / elapsed),
     latency_ms: { mean: round(sum("latency_sum_ms") / sum("ok")), p50: percentile(histogram, sum("ok"), 0.5), p95: percentile(histogram, sum("ok"), 0.95), p99: percentile(histogram, sum("ok"), 0.99), max: round(Math.max(...samples.map(s => s.latency_max_ms))) },
@@ -322,8 +323,8 @@ async function main() {
   }
 }
 
-if (isMainThread) await main();
-else {
+if (isMainThread && process.argv[1] === fileURLToPath(import.meta.url)) await main();
+else if (!isMainThread) {
   const client = httpClient(workerData);
   assert.equal((await client.call("initialize", init)).error, undefined);
   await client.notify();

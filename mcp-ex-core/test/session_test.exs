@@ -126,6 +126,27 @@ defmodule McpEx.SessionTest do
     response()
   end
 
+  test "request ID index distinguishes strings and integers and releases completed IDs", %{
+    context: context
+  } do
+    context = %{context | config: %{context.config | max_inflight: 2}}
+    {_, pid} = ready(context)
+    for id <- [7, "7"], do: Session.submit(pid, query(id), self())
+    assert_receive {:query_started, first, []}
+    assert_receive {:query_started, second, []}
+    {:ok, duplicate} = Session.request(pid, query(7))
+    assert Jason.decode!(duplicate)["error"]["code"] == -32600
+
+    send(first, :release)
+    send(second, :release)
+    assert MapSet.new([response()["id"], response()["id"]]) == MapSet.new([7, "7"])
+
+    for id <- [7, "7"] do
+      {:ok, encoded} = Session.request(pid, query(id, "SELECT large"))
+      refute Jason.decode!(encoded)["error"]
+    end
+  end
+
   test "cancellation frees worker and discards result without affecting another session", %{
     context: context
   } do
@@ -150,6 +171,8 @@ defmodule McpEx.SessionTest do
     assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}
     assert response() == nil
     assert {:ok, nil} = Session.request(pid, cancel)
+    {:ok, encoded} = Session.request(pid, query(7, "SELECT large"))
+    refute Jason.decode!(encoded)["error"]
     {:ok, pong} = Session.request(pid, rpc("ping"))
     assert Jason.decode!(pong)["result"] == %{}
   end
@@ -163,11 +186,13 @@ defmodule McpEx.SessionTest do
     send(worker, :crash)
     assert response()["error"]["message"] == "Request worker failed"
 
-    Session.submit(pid, query(2), self())
+    Session.submit(pid, query(1), self())
     assert_receive {:query_started, worker, []}
     monitor = Process.monitor(worker)
     assert response()["error"]["message"] == "Request timed out"
     assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}
+    {:ok, encoded} = Session.request(pid, query(1, "SELECT large"))
+    refute Jason.decode!(encoded)["error"]
     {:ok, pong} = Session.request(pid, rpc("ping"))
     assert Jason.decode!(pong)["result"] == %{}
   end

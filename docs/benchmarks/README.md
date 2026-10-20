@@ -8,6 +8,8 @@ contains the measured medians.
 
 For sustained request rates, concurrency/overload sweeps, laptop specifications
 and CPU/memory measurements, see the [local stress test](STRESS.md).
+For the subsequent stdio output/request-ID optimization and a fresh comparison
+with one- and four-session HTTP, see [stdio throughput](STDIO.md).
 
 ## Workloads
 

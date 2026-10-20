@@ -96,7 +96,24 @@ export async function checkSessionStdio(target, executable, env) {
   } finally {
     await oversized.stop();
   }
-  console.log(`${target.app}: stdio concurrency, cancellation, UTF-8/chunk framing, EOF and size checks passed`);
+
+  // A pipelined lifecycle and response burst must survive batching and EOF intact.
+  const burst = stdio(executable, { ...env, MCP_DASHBOARD: "false", ENABLE_PII_REDACTION: "false" });
+  try {
+    const pings = Array.from({ length: 300 }, (_, i) => rpc(i + 2, "ping"));
+    const messages = [rpc(1, "initialize", init), initialized, ...pings,
+      query(target, 302, "SELECT repeat('x', 131072) AS value")];
+    burst.child.stdin.end(messages.map(message => JSON.stringify(message)).join("\n"));
+    assert.deepEqual(await burst.closed, { code: 0, signal: null });
+    assert.deepEqual(burst.messages.map(message => message.id), Array.from({ length: 302 }, (_, i) => i + 1));
+    for (const message of burst.messages.slice(1, -1)) assert.deepEqual(message.result, {});
+    const result = burst.messages.at(-1).result;
+    assert.equal(result.isError, false);
+    assert.equal(JSON.parse(result.content[0].text)[0].value, "x".repeat(131072));
+  } finally {
+    await burst.stop();
+  }
+  console.log(`${target.app}: stdio concurrency, cancellation, UTF-8/chunk framing, batched output, EOF and size checks passed`);
 }
 
 export async function checkSessionHttp(target, url) {

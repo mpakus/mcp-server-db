@@ -53,6 +53,7 @@ defmodule McpEx.Session do
       phase: if(version, do: :initializing, else: :new),
       version: version,
       pending: %{},
+      request_refs: %{},
       idle: nil,
       draining: nil
     }
@@ -159,11 +160,11 @@ defmodule McpEx.Session do
        )
        when not is_map_key(message, "id") do
     id = if is_map(message["params"]), do: message["params"]["requestId"]
-    match = Enum.find(state.pending, fn {_, entry} -> entry.id === id end)
+    ref = Map.get(state.request_refs, id)
 
     state =
-      case match do
-        {ref, entry} ->
+      case state.pending[ref] do
+        entry when not is_nil(entry) ->
           Process.exit(entry.task.pid, :kill)
           complete(state, ref, nil)
 
@@ -179,7 +180,7 @@ defmodule McpEx.Session do
     id = request_id(message)
 
     cond do
-      not is_nil(id) and Enum.any?(state.pending, fn {_, entry} -> entry.id === id end) ->
+      not is_nil(id) and is_map_key(state.request_refs, id) ->
         deliver(
           target,
           {:ok, encode(Server.error(id, -32600, "Request id already active"), state)}
@@ -244,7 +245,12 @@ defmodule McpEx.Session do
           timer = Process.send_after(self(), {:deadline, ref}, context.config.request_timeout)
           entry = %{id: message["id"], task: %{pid: pid, ref: ref}, timer: timer, target: target}
           send(pid, {:run, ref})
-          %{state | pending: Map.put(state.pending, ref, entry)}
+
+          %{
+            state
+            | pending: Map.put(state.pending, ref, entry),
+              request_refs: Map.put(state.request_refs, entry.id, ref)
+          }
 
         {:error, :max_children} ->
           overloaded(message, target, state)
@@ -270,7 +276,14 @@ defmodule McpEx.Session do
         Process.cancel_timer(entry.timer)
         Process.demonitor(ref, [:flush])
         deliver(entry.target, {:ok, response})
-        state = touch(%{state | pending: pending})
+
+        state =
+          touch(%{
+            state
+            | pending: pending,
+              request_refs: Map.delete(state.request_refs, entry.id)
+          })
+
         if state.draining && map_size(pending) == 0, do: send(self(), :drained)
         state
     end

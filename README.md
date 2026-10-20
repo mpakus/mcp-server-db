@@ -163,7 +163,37 @@ validation. It runs the client, one MCP server and disposable Docker databases
 on the same laptop. The [stress methodology](docs/benchmarks/STRESS.md) describes
 the concurrency sweep, overload checks and reproduction commands.
 
-### Confirmed throughput
+### Stdio optimization: fresh before/after comparison
+
+The 2026-10-20 follow-up compares `ffce357` with bounded stdout batching and an
+active-request-ID index. Stdio keeps one supervised session GenServer and
+concurrent query workers. Responses already queued are written together without
+waiting to fill a batch; session duplicate checks/cancellation use direct ID lookup.
+
+Each value is the median of **three 30-second runs** at identical before/after
+settings: pool/limit 128 and concurrency 124 for MySQL; pool/limit 96 and
+concurrency 88 for PostgreSQL. Latency percentiles merge the three histograms.
+
+| Engine | Stdio before RPS | Stdio after RPS | Gain | Stdio p99 before → after (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| MySQL | 8,727 | **12,755** | **+46.2%** | 20.40 → 16.25 |
+| PostgreSQL | 8,031 | **9,582** | **+19.3%** | 16.30 → 15.15 |
+
+For comparison, new HTTP with one / four sessions measured
+**12,296 / 12,174 RPS** for MySQL and
+**9,513 / 9,487 RPS** for PostgreSQL at those same total
+concurrencies. Stdio now reaches similar throughput with one session. These
+controls also vary generator thread count; they do not isolate session count alone.
+
+All **30 confirmation runs** completed **9,427,093 successful responses**
+with **zero errors or busy replies**. Excess-load sweeps are counted separately.
+The full correctness check passed **39 ExUnit tests**, both builds and all SDK,
+dashboard and raw transport checks. Repository pool/concurrency defaults remain
+unchanged. See [ranges, CPU/RAM, methodology and reproduction](docs/benchmarks/STDIO.md),
+[raw results and verified environment](docs/benchmarks/stdio-2026-10-20.json), and
+the [comparison harness](test/stdio-benchmark.mjs).
+
+### Initial stress results (before stdio optimization)
 
 Highest error-free candidates from the concurrency sweep, confirmed with **three
 30-second runs** each. RPS below is the median of those runs; latency percentiles
@@ -198,7 +228,9 @@ and the [stress harness](test/stress.mjs).
 
 ### Test machine and versions
 
-Recorded locally on 2026-10-20; application source: `d69485f`.
+Recorded locally on 2026-10-20; original application source: `d69485f`.
+Runtime/database versions, CPU, RAM, OS and Docker allocation were rechecked
+for the stdio follow-up above.
 
 | Component | Version / specification |
 | --- | --- |

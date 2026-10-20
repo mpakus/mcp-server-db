@@ -1,5 +1,9 @@
 # Local throughput stress test
 
+For the subsequent output batching and request-ID indexing change, see the
+[fresh stdio/HTTP comparison](STDIO.md). The results below preserve the original
+measurement before that optimization.
+
 The 2026-10-20 run measures completed MCP SQL tool calls on this laptop, using
 the server code at `d69485f1788dea160f233f706c20588b0f95460a`. No application code
 or persisted server settings were changed. The [root README](../../README.md)

@@ -143,7 +143,9 @@ controlled slow-query function; normal SDK checks keep PII enabled.
 [`test/sessions.mjs`](../test/sessions.mjs) also checks responsive pings during
 SQL, cancellation and connection recovery, fragmented UTF-8, 256 KiB frames,
 oversized input without newline/EOF, final unterminated frames and draining on
-EOF. HTTP checks cover session IDs, per-request authentication/Origin/version,
+EOF. A pipelined initialization/300-ping burst plus a 128 KiB query result checks
+complete output through batching and EOF. HTTP checks cover session IDs,
+per-request authentication/Origin/version,
 cancellation, DELETE and invalidated IDs. PostgreSQL uses a read-only fixture
 function around `pg_sleep` because PII policy rejects `pg_*` identifiers.
 
@@ -172,6 +174,13 @@ offline-capable format/compile/test steps.
 | HTTP boundaries | Exact bearer matching, rejected Origin, protocol version, size and media types; SDK concurrent clients |
 
 ## Recorded evidence and limits
+
+The subsequent 2026-10-20 stdio optimization passed
+`MCP_INTEGRATION=true rtk proxy ./bin/check`: **39 ExUnit tests** (35 core and two
+per adapter), both builds and all SDK/dashboard/raw-escript checks. New checks
+cover string/integer request-ID separation, ID reuse after completion,
+cancellation, crash and timeout, and pipelined/batched output on EOF. The
+[stdio comparison](benchmarks/STDIO.md) records its separate throughput results.
 
 The 2026-10-20 session implementation passed
 `MCP_INTEGRATION=true rtk proxy ./bin/check`: 38 ExUnit tests (34 core and two per

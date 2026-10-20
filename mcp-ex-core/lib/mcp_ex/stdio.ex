@@ -87,5 +87,20 @@ defmodule McpEx.Stdio do
     end
   end
 
-  defp write(response), do: IO.binwrite(:stdio, [response, "\n"])
+  # Coalesce only responses already queued; never wait to fill a batch.
+  defp write(response), do: write([[response, "\n"]], 1, byte_size(response) + 1)
+
+  defp write(responses, count, size) when count < 64 and size < 65_536 do
+    receive do
+      {:session_response, {:ok, nil}} ->
+        write(responses, count + 1, size)
+
+      {:session_response, {:ok, response}} ->
+        write([[response, "\n"] | responses], count + 1, size + byte_size(response) + 1)
+    after
+      0 -> IO.binwrite(:stdio, Enum.reverse(responses))
+    end
+  end
+
+  defp write(responses, _, _), do: IO.binwrite(:stdio, Enum.reverse(responses))
 end

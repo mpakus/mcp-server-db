@@ -272,3 +272,43 @@ outside the measurements. Full ExUnit checks were not rerun; server code is unch
 Final checks passed: harness syntax, 44 local documentation links, documented
 shell syntax, exact README/result agreement and `git diff --check`. All fixture
 containers and their network were removed after the completed run.
+
+## Stdio throughput improvement — 2026-10-20
+
+Using RTK, Ponytail, staff-level-elixir and erlang-best-practice. The existing
+stdio session is already a supervised GenServer. Preserve that lifecycle and
+bounded query workers; optimize overhead around the single stream. Saved freshly
+built baseline escripts from `ffce357` before editing. First candidate coalesces
+already queued responses into bounded writes without a batching delay and indexes
+active request IDs for direct duplicate/cancellation lookup. Regression checks
+cover typed IDs, ID reuse, pipelined lifecycle, response bursts and EOF draining.
+Fresh before/after measurements and HTTP session-count controls are in progress.
+
+Full correctness gate passed: 39 ExUnit tests (35 core, two per adapter),
+formatting, application compilation with warnings as errors, both builds and
+all SDK/dashboard/raw transport checks on disposable MySQL/PostgreSQL. The
+32-phase comparison smoke check passed. The first full engine comparison
+confirms MySQL stdio median 8,726.54 -> 12,754.74 RPS at concurrency 124, with
+zero busy/error responses in all confirmations. PostgreSQL and the remaining
+HTTP controls are running sequentially; no parallel load generators are used.
+
+Completed the full comparison: 72 measured phases, 11,268,662 validated successful
+responses, zero unexpected errors and 300,374 busy replies confined to deliberate
+overload phases. All 30 confirmations completed 9,427,093 successful responses
+with zero busy/errors. Fresh stdio medians improved 8,726.54 -> 12,754.74 RPS
+(+46.2%) for MySQL and 8,031.31 -> 9,581.55 RPS (+19.3%) for PostgreSQL. The
+comparison kept pool/limit/concurrency fixed within each engine; one- and
+four-session HTTP controls reached similar rates. HTTP four-session median
+changes (-2.0% MySQL, -0.3% PG), ranges and latency/resource results are explicitly
+reported rather than assuming no change. No individual-change ablation was run.
+
+Updated the root README, developer/testing guides and benchmark index. Saved
+[all phases, histograms, environment and source/build hashes](../docs/benchmarks/stdio-2026-10-20.json)
+and [methodology, resource tables and reproduction](../docs/benchmarks/STDIO.md).
+The standalone original stress entrypoint also passed its 16-phase smoke check.
+All recorded source/build hashes, histogram/per-second counts, RPS calculations
+and README/detailed result tables were verified; 94 local links, 20 shell
+blocks, all three touched JavaScript syntax checks and git diff --check passed.
+Disposed of the fixture containers/network and temporary baseline executables
+after verification. Repository settings remain unchanged. Measurements cover
+tiny hot reads, not production SQL, TLS, large results or long soak behavior.

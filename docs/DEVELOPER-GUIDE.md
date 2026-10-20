@@ -71,13 +71,20 @@ restarting empty state. A unique Registry resolves secure HTTP session IDs.
 The session serializes lifecycle/control messages and starts query/resource
 tasks under a shared Task.Supervisor. Global tasks are capped at pool size;
 per-session work defaults to four. Capacity failures reject work immediately.
+Active request IDs map directly to worker monitor references for duplicate
+checks and cancellation; completion, cancellation and failure remove the ID.
 Tasks link to the session and are monitored. The session traps task exits,
 handles result/DOWN/deadline messages, and kills workers on termination. Links
 also clean up workers if the session is killed before its terminate callback.
 No task or database write is automatically retried.
 
 Stdio has one session per executable. Its CLI process reads bounded chunks and
-writes complete response frames while workers run separately. The escripts
+writes complete response frames while workers run separately. The writer
+coalesces responses already waiting in the mailbox into a single write (at most
+64 messages, stopping once 64 KiB is reached; an individual response may exceed
+that threshold). There is no timer or wait to fill a batch. The one writer
+preserves complete newline-delimited frames, and admission still waits for a
+session acknowledgement to avoid an unbounded submission queue. The escripts
 embed `-noinput` to disable OTP's competing stdin reader before opening the fd
 port. EOF drains admitted work, including a final frame without a newline.
 HTTP disconnects do not end logical sessions; explicit DELETE and idle expiry do.
