@@ -81,7 +81,7 @@ defmodule McpEx.MysqlTest do
     assert query(pii, "SELECT * FROM users")["isError"]
     fields = payload(query(pii, "SHOW COLUMNS FROM users"))
     refute Enum.any?(fields, &(&1["Field"] == "email"))
-    assert length(Server.rows(McpEx.Mysql.tables(ctx))) >= 1
+    assert Server.rows(McpEx.Mysql.tables(ctx)) != []
 
     assert Enum.any?(
              Server.rows(McpEx.Mysql.columns(ctx, "mcp_test", "users")),

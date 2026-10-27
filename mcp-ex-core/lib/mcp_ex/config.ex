@@ -4,14 +4,15 @@ defmodule McpEx.Config do
 
   def load(dialect, env \\ System.get_env()) do
     prefix = if dialect == :mysql, do: "MYSQL", else: "PG"
+    {default_database, default_port, default_user} = connection_defaults(dialect)
     host = get(env, prefix <> "_HOST", "127.0.0.1")
-    database = get(env, prefix <> "_DB", if(dialect == :mysql, do: nil, else: "postgres"))
+    database = get(env, prefix <> "_DB", default_database)
     schema = if dialect == :mysql, do: database, else: get(env, "PG_SCHEMA", "public")
 
     connection = [
       hostname: host,
-      port: number(env, prefix <> "_PORT", if(dialect == :mysql, do: 3306, else: 5432), 65_535),
-      username: get(env, prefix <> "_USER", if(dialect == :mysql, do: "root", else: "postgres")),
+      port: number(env, prefix <> "_PORT", default_port, 65_535),
+      username: get(env, prefix <> "_USER", default_user),
       password: Map.get(env, prefix <> "_PASS", ""),
       database: database,
       pool_size: number(env, prefix <> "_POOL_SIZE", 10, 1000),
@@ -73,6 +74,9 @@ defmodule McpEx.Config do
         number(env, "MCP_REQUEST_TIMEOUT", min(connection[:timeout] + 1000, 2_147_483_647))
     }
   end
+
+  defp connection_defaults(:mysql), do: {nil, 3306, "root"}
+  defp connection_defaults(_), do: {"postgres", 5432, "postgres"}
 
   def read_only?(config) do
     (is_nil(config.schema) and not config.multi_write) or
@@ -178,12 +182,7 @@ defmodule McpEx.Config do
 
   defp connection_url(connection, value, dialect) do
     uri = URI.parse(value)
-    schemes = if dialect == :mysql, do: ["mysql"], else: ["postgres", "postgresql"]
-
-    if uri.scheme not in schemes or is_nil(uri.host) or not is_nil(uri.query) or
-         not is_nil(uri.fragment),
-       do:
-         raise(ArgumentError, "Connection string must be a database URL without query parameters")
+    validate_connection_url!(uri, dialect)
 
     [user | password] = String.split(uri.userinfo || "", ":", parts: 2)
     database = (uri.path || "") |> String.trim_leading("/") |> URI.decode()
@@ -195,6 +194,15 @@ defmodule McpEx.Config do
     |> Keyword.put(:username, URI.decode(user))
     |> Keyword.put(:password, URI.decode(List.first(password) || ""))
     |> Keyword.put(:database, if(database == "", do: nil, else: database))
+  end
+
+  defp validate_connection_url!(uri, dialect) do
+    schemes = if dialect == :mysql, do: ["mysql"], else: ["postgres", "postgresql"]
+
+    if uri.scheme not in schemes or is_nil(uri.host) or not is_nil(uri.query) or
+         not is_nil(uri.fragment),
+       do:
+         raise(ArgumentError, "Connection string must be a database URL without query parameters")
   end
 
   defp tls(env, prefix, host) do

@@ -3,7 +3,8 @@
 The implementation uses two small Mix applications and one sibling library.
 MyXQL and Postgrex own database connectivity; the shared core owns configuration,
 SQL policy, MCP request handling, normalization/masking and transports. There is
-no Ecto layer, Phoenix application, web UI or custom database protocol.
+no Ecto layer, Phoenix application or custom database protocol. The browser
+dashboard uses Plug/Bandit and the existing private diagnostic snapshots.
 
 ## Workspace layout
 
@@ -21,10 +22,11 @@ no Ecto layer, Phoenix application, web UI or custom database protocol.
 | [`stdio.ex`](../mcp-ex-core/lib/mcp_ex/stdio.ex) | Bounded raw input chunks, newline framing and one stdout writer |
 | [`diagnostics.ex`](../mcp-ex-core/lib/mcp_ex/diagnostics.ex) | Optional ETS counters, private snapshots and bounded samplers |
 | [`monitor.ex`](../mcp-ex-core/lib/mcp_ex/monitor.ex) | Status/resources rendering, JSON/watch, freshness and exit codes |
+| [`dashboard.ex`](../mcp-ex-core/lib/mcp_ex/dashboard.ex) | Browser assets and token-protected access to one diagnostic snapshot |
 | [`http.ex`](../mcp-ex-core/lib/mcp_ex/http.ex) | Plug handler, auth/origin/version checks, media types and bounded HTTP body handling |
 | [`mysql.ex`](../mcp-ex-mysql/lib/mcp_ex/mysql.ex) | MyXQL pool, transaction execution, MySQL metadata SQL and CLI entry point |
 | [`pg.ex`](../mcp-ex-pg/lib/mcp_ex/pg.ex) | Postgrex pool, startup parameters, transaction execution, schema metadata and CLI entry point |
-| [`bin/check`](../bin/check) | Format/compile/test/build entry point for all three projects |
+| [`bin/check`](../bin/check) | Format/compile/strict Credo/test/build entry point for all three projects |
 | [`test/`](../test) | Disposable SQL fixtures and official TypeScript SDK transport checks |
 | [`compose.test.yml`](../compose.test.yml) | Local disposable MySQL/PostgreSQL databases |
 | [`.worklog/`](../.worklog/status.md) | Task status, implementation decisions and verification evidence |
@@ -312,17 +314,23 @@ and two rejected policy checks per server; it never enables write permissions.
 
 `mix.exs` declares version ranges; committed lockfiles choose exact packages.
 MySQL uses MyXQL `~> 0.9.0`; PostgreSQL uses Postgrex `~> 0.22.0`. Bandit is
-restricted to `~> 1.13.1` and Decimal to `~> 3.1.2`, establishing patched minimums.
+restricted to `~> 1.14.0` and Decimal to `~> 3.2.0`, establishing patched minimums.
 Avoid adding runtime dependencies when the standard library or current modules
 cover the requirement. Fetch/update dependencies
 deliberately in the relevant projects and review all affected locks; core
 dependencies can resolve separately in each consumer.
 
-Both Mix applications and the server-info response currently report `0.1.0`.
+All three Mix projects and the server-info response currently report `0.2.0`.
 The response version is hardcoded in `server.ex`, so a release version change
 must update it alongside the Mix project versions. Supported MCP versions are
 listed in `Server.versions/0`; do not infer support for unlisted versions from
 the client's package version.
+
+Credo `~> 1.7.19` is a development/test dependency with `runtime: false` in each
+project. `bin/check` runs `mix credo --strict`; no checks are suppressed. The SDK
+integration harness uses `@modelcontextprotocol/sdk` `^1.32.2` and its npm lockfile.
+Both adapters default `mix escript.build` to `MIX_ENV=prod`, and `bin/check`
+selects it explicitly, so Credo and its dependencies stay out of the executables.
 
 Compared with the TypeScript reference, these implementations keep the query,
 permissions, PII, table resources and dual transports, while using qualified

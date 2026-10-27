@@ -91,10 +91,7 @@ defmodule McpEx.Diagnostics do
   end
 
   def rpc(context, message, fun) do
-    notification =
-      is_map(message) and message["jsonrpc"] == "2.0" and
-        is_binary(message["method"]) and is_map(Map.get(message, "params", %{})) and
-        not Map.has_key?(message, "id")
+    notification = notification?(message)
 
     {response, _} = result = fun.()
 
@@ -377,6 +374,12 @@ defmodule McpEx.Diagnostics do
     %{state | sequence: state.sequence + 1, write_failed: result != :ok}
   end
 
+  defp notification?(message) do
+    is_map(message) and message["jsonrpc"] == "2.0" and
+      is_binary(message["method"]) and is_map(Map.get(message, "params", %{})) and
+      not Map.has_key?(message, "id")
+  end
+
   defp write_snapshot(state, data) when byte_size(data) <= @limit do
     temporary = state.path <> ".#{System.unique_integer([:positive])}.tmp"
 
@@ -387,8 +390,7 @@ defmodule McpEx.Diagnostics do
           with :ok <- File.chmod(temporary, 0o600),
                :ok <- IO.binwrite(file, data),
                :ok <- File.close(file),
-               :ok <- File.rename(temporary, state.path),
-               do: :ok
+               do: File.rename(temporary, state.path)
         after
           File.close(file)
         end
@@ -438,20 +440,30 @@ defmodule McpEx.Diagnostics do
           {:ok, []}
 
         _ ->
-          with :ok <- private_directory(directory, uid), {:ok, names} <- File.ls(directory) do
-            names
-            |> Enum.filter(&Regex.match?(~r/^[a-f0-9]{24}\.json$/, &1))
-            |> Enum.filter(&(is_nil(instance) or &1 == instance <> ".json"))
-            |> Enum.sort()
-            |> Enum.reduce_while({:ok, []}, fn name, {:ok, acc} ->
-              case read_snapshot(Path.join(directory, name), uid) do
-                {:ok, snapshot} -> {:cont, {:ok, [snapshot | acc]}}
-                {:error, :enoent} -> {:cont, {:ok, acc}}
-                error -> {:halt, error}
-              end
-            end)
-          end
+          load_snapshots(directory, uid, instance)
       end
+    end
+  end
+
+  defp load_snapshots(directory, uid, instance) do
+    with :ok <- private_directory(directory, uid), {:ok, names} <- File.ls(directory) do
+      names
+      |> Enum.filter(
+        &(Regex.match?(~r/^[a-f0-9]{24}\.json$/, &1) and
+            (is_nil(instance) or &1 == instance <> ".json"))
+      )
+      |> Enum.sort()
+      |> Enum.reduce_while({:ok, []}, fn name, {:ok, acc} ->
+        collect_snapshot(Path.join(directory, name), uid, acc)
+      end)
+    end
+  end
+
+  defp collect_snapshot(path, uid, acc) do
+    case read_snapshot(path, uid) do
+      {:ok, snapshot} -> {:cont, {:ok, [snapshot | acc]}}
+      {:error, :enoent} -> {:cont, {:ok, acc}}
+      error -> {:halt, error}
     end
   end
 
@@ -479,38 +491,58 @@ defmodule McpEx.Diagnostics do
   end
 
   defp valid?(s) when is_map(s) do
+    valid_identity?(s) and valid_database?(s["database"]) and valid_counters?(s["counters"]) and
+      is_map(s["beam"]) and Enum.all?(~w(memory_bytes processes), &nonnegative?(s["beam"][&1])) and
+      valid_health?(s["health"]) and valid_pool?(s["pool"]) and valid_resources?(s["resources"])
+  end
+
+  defp valid?(_), do: false
+
+  defp valid_identity?(s) do
     s["schema_version"] == 1 and is_binary(s["instance_id"]) and
       Regex.match?(~r/^[a-f0-9]{24}$/, s["instance_id"]) and
       Enum.all?(~w(started_at updated_at sequence uptime_ms), &nonnegative?(s[&1])) and
       is_binary(s["pid"]) and s["transport"] in ["stdio", "http"] and
-      is_map(s["server"]) and Enum.all?(~w(name version), &is_binary(s["server"][&1])) and
-      is_map(s["database"]) and s["database"]["dialect"] in ["mysql", "pg"] and
-      Enum.all?(
-        ~w(host name schema),
-        &(is_binary(s["database"][&1]) or is_nil(s["database"][&1]))
-      ) and
-      Enum.all?(~w(port pool_size), &nonnegative?(s["database"][&1])) and
-      Enum.all?(~w(read_only pii), &is_boolean(s["database"][&1])) and
-      is_map(s["counters"]) and Enum.sort(Map.keys(s["counters"])) == Enum.sort(@keys) and
-      Enum.all?(Map.values(s["counters"]), &nonnegative?/1) and
-      is_map(s["beam"]) and Enum.all?(~w(memory_bytes processes), &nonnegative?(s["beam"][&1])) and
-      Enum.all?(~w(health pool resources), &valid_sample?(s[&1])) and
-      nonnegative?(s["health"]["last_success_at"]) and
-      (is_nil(s["health"]["last_success_duration_ms"]) or
-         (is_number(s["health"]["last_success_duration_ms"]) and
-            s["health"]["last_success_duration_ms"] >= 0)) and
-      (s["pool"]["status"] != "ok" or Enum.all?(~w(ready queued), &nonnegative?(s["pool"][&1]))) and
-      is_list(s["resources"]["items"]) and length(s["resources"]["items"]) <= 200 and
-      nonnegative?(s["resources"]["total"]) and is_boolean(s["resources"]["truncated"]) and
-      (is_nil(s["resources"]["sampled_at"]) or nonnegative?(s["resources"]["sampled_at"])) and
-      Enum.all?(s["resources"]["items"], fn item ->
-        is_map(item) and Map.keys(item) -- @resource_keys == [] and
-          Enum.all?(~w(uri name mimeType), &is_binary(item[&1])) and
-          (is_nil(item["title"]) or is_binary(item["title"]))
-      end)
+      is_map(s["server"]) and Enum.all?(~w(name version), &is_binary(s["server"][&1]))
   end
 
-  defp valid?(_), do: false
+  defp valid_database?(db) do
+    is_map(db) and db["dialect"] in ["mysql", "pg"] and
+      Enum.all?(~w(host name schema), &(is_binary(db[&1]) or is_nil(db[&1]))) and
+      Enum.all?(~w(port pool_size), &nonnegative?(db[&1])) and
+      Enum.all?(~w(read_only pii), &is_boolean(db[&1]))
+  end
+
+  defp valid_counters?(counters) do
+    is_map(counters) and Enum.sort(Map.keys(counters)) == Enum.sort(@keys) and
+      Enum.all?(Map.values(counters), &nonnegative?/1)
+  end
+
+  defp valid_health?(health) do
+    valid_sample?(health) and nonnegative?(health["last_success_at"]) and
+      (is_nil(health["last_success_duration_ms"]) or
+         (is_number(health["last_success_duration_ms"]) and
+            health["last_success_duration_ms"] >= 0))
+  end
+
+  defp valid_pool?(pool) do
+    valid_sample?(pool) and
+      (pool["status"] != "ok" or Enum.all?(~w(ready queued), &nonnegative?(pool[&1])))
+  end
+
+  defp valid_resources?(resources) do
+    valid_sample?(resources) and is_list(resources["items"]) and length(resources["items"]) <= 200 and
+      nonnegative?(resources["total"]) and is_boolean(resources["truncated"]) and
+      (is_nil(resources["sampled_at"]) or nonnegative?(resources["sampled_at"])) and
+      Enum.all?(resources["items"], &valid_resource?/1)
+  end
+
+  defp valid_resource?(item) do
+    is_map(item) and Map.keys(item) -- @resource_keys == [] and
+      Enum.all?(~w(uri name mimeType), &is_binary(item[&1])) and
+      (is_nil(item["title"]) or is_binary(item["title"]))
+  end
+
   defp nonnegative?(n), do: is_integer(n) and n >= 0
 
   defp valid_sample?(s),

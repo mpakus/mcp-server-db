@@ -169,16 +169,7 @@ defmodule McpEx.Policy do
         {:read, [], nil}
 
       "INSERT" ->
-        tail = expect(tail, "INTO")
-        {schema, rest} = target(tail, config)
-
-        unless List.first(rest) == {:symbol, "("} or
-                 Enum.any?(~w(VALUES VALUE DEFAULT AS), &keyword?(List.first(rest), &1)),
-               do: raise(ArgumentError, "Only an explicit single-table INSERT is supported")
-
-        simple_write!(rest, ~w(SELECT JOIN WITH DELETE INSERT))
-        operations = if "UPDATE" in words, do: ["insert", "update"], else: ["insert"]
-        {:write, operations, schema}
+        insert_target(tail, words, config)
 
       "UPDATE" ->
         {schema, rest} = target(tail, config)
@@ -190,14 +181,7 @@ defmodule McpEx.Policy do
         {:write, ["update"], schema}
 
       "DELETE" ->
-        {schema, rest} = tail |> expect("FROM") |> target(config)
-
-        if rest != [] and not keyword?(List.first(rest), "WHERE") and
-             not keyword?(List.first(rest), "RETURNING"),
-           do: raise(ArgumentError, "Only single-table DELETE is supported")
-
-        simple_write!(rest, ~w(SELECT JOIN WITH DELETE INSERT UPDATE USING))
-        {:write, ["delete"], schema}
+        delete_target(tail, config)
 
       ddl when ddl in ~w(CREATE ALTER DROP TRUNCATE) ->
         ddl_target(tokens, config)
@@ -209,6 +193,29 @@ defmodule McpEx.Policy do
 
   defp classify(_, _, _), do: raise(ArgumentError, "SQL must start with a statement keyword")
 
+  defp insert_target(tail, words, config) do
+    {schema, rest} = tail |> expect("INTO") |> target(config)
+
+    unless List.first(rest) == {:symbol, "("} or
+             Enum.any?(~w(VALUES VALUE DEFAULT AS), &keyword?(List.first(rest), &1)),
+           do: raise(ArgumentError, "Only an explicit single-table INSERT is supported")
+
+    simple_write!(rest, ~w(SELECT JOIN WITH DELETE INSERT))
+    operations = if "UPDATE" in words, do: ["insert", "update"], else: ["insert"]
+    {:write, operations, schema}
+  end
+
+  defp delete_target(tail, config) do
+    {schema, rest} = tail |> expect("FROM") |> target(config)
+
+    if rest != [] and not keyword?(List.first(rest), "WHERE") and
+         not keyword?(List.first(rest), "RETURNING"),
+       do: raise(ArgumentError, "Only single-table DELETE is supported")
+
+    simple_write!(rest, ~w(SELECT JOIN WITH DELETE INSERT UPDATE USING))
+    {:write, ["delete"], schema}
+  end
+
   defp ddl_target([{:word, operation} | rest], config) do
     operation = String.upcase(operation)
 
@@ -217,14 +224,7 @@ defmodule McpEx.Policy do
         do: rest,
         else: expect(rest, "TABLE")
 
-    rest =
-      if keyword?(List.first(rest), "IF") do
-        rest = tl(rest)
-        rest = if keyword?(List.first(rest), "NOT"), do: tl(rest), else: rest
-        expect(rest, "EXISTS")
-      else
-        rest
-      end
+    rest = existence_condition(rest)
 
     {schema, tail} = target(rest, config)
 
@@ -243,6 +243,16 @@ defmodule McpEx.Policy do
       do: raise(ArgumentError, "Schema changes are disabled")
 
     {:ddl, ["ddl"], schema}
+  end
+
+  defp existence_condition(rest) do
+    if keyword?(List.first(rest), "IF") do
+      rest = tl(rest)
+      rest = if keyword?(List.first(rest), "NOT"), do: tl(rest), else: rest
+      expect(rest, "EXISTS")
+    else
+      rest
+    end
   end
 
   defp target([first, {:symbol, "."}, second | rest], config) do
@@ -304,22 +314,23 @@ defmodule McpEx.Policy do
           Enum.at(words, 1) not in ~w(SELECT INSERT UPDATE DELETE REPLACE ANALYZE FORMAT EXTENDED PARTITIONS) ->
         :columns
 
-      List.first(words) == "SHOW" and
-          (Enum.at(words, 1) in ~w(COLUMNS FIELDS INDEX INDEXES KEYS) or
-             (Enum.at(words, 1) == "FULL" and Enum.at(words, 2) in ~w(COLUMNS FIELDS))) ->
-        :columns
-
-      List.first(words) == "SHOW" and
-          Enum.at(words, 1) in ~w(TABLES DATABASES SCHEMAS CHARACTER CHARSET COLLATION) ->
-        :topology
-
       List.first(words) == "SHOW" ->
-        :blocked
+        show_introspection(tl(words))
 
       true ->
         nil
     end
   end
+
+  defp show_introspection([kind | _]) when kind in ~w(COLUMNS FIELDS INDEX INDEXES KEYS),
+    do: :columns
+
+  defp show_introspection(["FULL", kind | _]) when kind in ~w(COLUMNS FIELDS), do: :columns
+
+  defp show_introspection([kind | _])
+       when kind in ~w(TABLES DATABASES SCHEMAS CHARACTER CHARSET COLLATION), do: :topology
+
+  defp show_introspection(_), do: :blocked
 
   defp pii!(_, _, %{pii: false}), do: :ok
 
@@ -332,23 +343,7 @@ defmodule McpEx.Policy do
            "SQL introspection is disabled by PII policy; use MCP table resources"
          )
 
-    if not config.pii_star do
-      tokens
-      |> Enum.with_index()
-      |> Enum.each(fn
-        {{:symbol, "*"}, index} ->
-          unless Enum.at(tokens, index - 1) == {:symbol, "("} and
-                   keyword?(Enum.at(tokens, index - 2), "COUNT"),
-                 do:
-                   raise(
-                     ArgumentError,
-                     "Wildcard SQL is disabled by PII policy; project explicit columns"
-                   )
-
-        _ ->
-          :ok
-      end)
-    end
+    if not config.pii_star, do: check_wildcards!(tokens)
 
     if not config.pii_references and
          Enum.any?(tokens, fn
@@ -356,5 +351,23 @@ defmodule McpEx.Policy do
            _ -> false
          end),
        do: raise(ArgumentError, "Query references a protected PII identifier")
+  end
+
+  defp check_wildcards!(tokens) do
+    tokens
+    |> Enum.with_index()
+    |> Enum.each(fn
+      {{:symbol, "*"}, index} ->
+        unless Enum.at(tokens, index - 1) == {:symbol, "("} and
+                 keyword?(Enum.at(tokens, index - 2), "COUNT"),
+               do:
+                 raise(
+                   ArgumentError,
+                   "Wildcard SQL is disabled by PII policy; project explicit columns"
+                 )
+
+      _ ->
+        :ok
+    end)
   end
 end

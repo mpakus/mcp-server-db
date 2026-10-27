@@ -16,4 +16,5 @@ defmodule McpEx.Mysql.MixProject do
   end
 
   def application, do: [extra_applications: [:logger, :ssl]]
+  def cli, do: [preferred_envs: ["escript.build": :prod]]
 end

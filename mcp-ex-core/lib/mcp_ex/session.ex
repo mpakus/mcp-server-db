@@ -200,11 +200,15 @@ defmodule McpEx.Session do
         start_work(message, target, state)
 
       true ->
-        {response, phase} = Server.handle(message, state.context, state.phase)
-        version = get_in(response || %{}, ["result", "protocolVersion"]) || state.version
-        deliver(target, {:ok, encode(response, state)})
-        %{state | phase: phase, version: version}
+        handle_immediate(message, target, state)
     end
+  end
+
+  defp handle_immediate(message, target, state) do
+    {response, phase} = Server.handle(message, state.context, state.phase)
+    version = get_in(response || %{}, ["result", "protocolVersion"]) || state.version
+    deliver(target, {:ok, encode(response, state)})
+    %{state | phase: phase, version: version}
   end
 
   defp request_id(%{"jsonrpc" => "2.0", "method" => method, "id" => id})
@@ -231,15 +235,10 @@ defmodule McpEx.Session do
 
       # Linking also cleans up on an untrappable session kill. The handshake installs
       # the monitor before work starts; task failures cannot crash the trapping owner.
-      case Task.Supervisor.start_child(context.tasks, fn ->
-             Process.link(owner)
+      task =
+        Task.Supervisor.start_child(context.tasks, fn -> run_work(owner, message, context) end)
 
-             receive do
-               {:run, ref} ->
-                 {response, _} = Server.handle(message, context)
-                 send(owner, {ref, Server.encode(response, context.config.max_response_bytes)})
-             end
-           end) do
+      case task do
         {:ok, pid} ->
           ref = Process.monitor(pid)
           timer = Process.send_after(self(), {:deadline, ref}, context.config.request_timeout)
@@ -255,6 +254,16 @@ defmodule McpEx.Session do
         {:error, :max_children} ->
           overloaded(message, target, state)
       end
+    end
+  end
+
+  defp run_work(owner, message, context) do
+    Process.link(owner)
+
+    receive do
+      {:run, ref} ->
+        {response, _} = Server.handle(message, context)
+        send(owner, {ref, Server.encode(response, context.config.max_response_bytes)})
     end
   end
 

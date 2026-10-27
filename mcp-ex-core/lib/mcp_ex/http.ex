@@ -28,6 +28,13 @@ defmodule McpEx.HTTP do
       not version_allowed?(conn) ->
         reject(conn, 400, "Unsupported MCP protocol version")
 
+      true ->
+        request(conn, context)
+    end
+  end
+
+  defp request(conn, context) do
+    cond do
       conn.method == "DELETE" ->
         with_session(conn, context, fn pid ->
           Session.close(pid)
@@ -90,15 +97,7 @@ defmodule McpEx.HTTP do
       # Validate before allocating a session; malformed initialization cannot consume slots.
       case Server.handle(message, context, :new) do
         {%{"result" => result} = response, :initializing} ->
-          case Session.open(context, nil, result["protocolVersion"]) do
-            {:ok, id, _pid} ->
-              conn
-              |> put_resp_header("mcp-session-id", id)
-              |> respond({:ok, Server.encode(response, context.config.max_response_bytes)})
-
-            {:error, :max_children} ->
-              reject(conn, 503, "Session capacity reached")
-          end
+          open_session(conn, context, response, result["protocolVersion"])
 
         {response, _} ->
           respond(conn, {:ok, Server.encode(response, context.config.max_response_bytes)})
@@ -110,6 +109,18 @@ defmodule McpEx.HTTP do
           Session.request(pid, message, List.first(get_req_header(conn, "mcp-protocol-version")))
         )
       end)
+    end
+  end
+
+  defp open_session(conn, context, response, version) do
+    case Session.open(context, nil, version) do
+      {:ok, id, _pid} ->
+        conn
+        |> put_resp_header("mcp-session-id", id)
+        |> respond({:ok, Server.encode(response, context.config.max_response_bytes)})
+
+      {:error, :max_children} ->
+        reject(conn, 503, "Session capacity reached")
     end
   end
 

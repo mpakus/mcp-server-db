@@ -2,8 +2,11 @@
 
 Use [`bin/check`](../bin/check) as the repeatable verification entry point.
 It runs formatting checks, application compilation with warnings as errors,
-ExUnit tests and builds both escripts. It uses `rtk proxy` when RTK is installed,
+strict Credo analysis, ExUnit tests and builds both escripts. It uses `rtk proxy` when RTK is installed,
 falling back to direct commands otherwise.
+
+Escript builds use `MIX_ENV=prod` to exclude Credo and its development dependencies.
+Both adapter projects also default the `mix escript.build` task to production mode.
 
 ## Prerequisites
 
@@ -44,6 +47,7 @@ For an affected project alone:
 ```sh
 (cd mcp-ex-core && rtk proxy mix format --check-formatted)
 (cd mcp-ex-core && rtk proxy mix compile --warnings-as-errors)
+(cd mcp-ex-core && rtk proxy mix credo --strict)
 (cd mcp-ex-core && rtk proxy mix test)
 ```
 
@@ -167,6 +171,10 @@ done
 
 These checks use the current advisory registry and are separate from the normal
 offline-capable format/compile/test steps.
+
+For the SDK test dependencies, run `npm --prefix test outdated` and
+`npm --prefix test audit`. Credo is installed through each project's development
+dependencies; it is not required at runtime.
 
 The SDK runner also checks `--host`/`--port` precedence, invalid startup arguments,
 stderr URLs and JSON-only stdout. Browser dashboard checks cover both dialects

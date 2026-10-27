@@ -18,12 +18,7 @@ defmodule McpEx.Server do
         {error(Map.get(message, "id"), -32_602, "params must be an object"), state}
 
       not Map.has_key?(message, "id") ->
-        next =
-          if method == "notifications/initialized" and state == :initializing,
-            do: :ready,
-            else: state
-
-        {nil, next}
+        {nil, notification_state(method, state)}
 
       not is_integer(message["id"]) and not is_binary(message["id"]) ->
         {error(nil, -32_600, "Invalid request id"), state}
@@ -32,19 +27,7 @@ defmodule McpEx.Server do
         {error(message["id"], -32_000, "Initialize the MCP connection first"), state}
 
       true ->
-        try do
-          result = dispatch(method, params, context)
-          next = if method == "initialize" and state == :new, do: :initializing, else: state
-          {%{"jsonrpc" => "2.0", "id" => message["id"], "result" => result}, next}
-        rescue
-          error in ArgumentError ->
-            {error(message["id"], -32_602, Exception.message(error)), state}
-
-          error ->
-            {error(message["id"], -32_603, safe_error(error, context.config)), state}
-        catch
-          {:rpc, code, reason} -> {error(message["id"], code, reason), state}
-        end
+        reply(message, params, context, state)
     end
   end
 
@@ -52,6 +35,23 @@ defmodule McpEx.Server do
        when is_map_key(message, "result") or is_map_key(message, "error"), do: {nil, state}
 
   defp do_handle(_, _, state), do: {error(nil, -32_600, "Invalid JSON-RPC request"), state}
+
+  defp notification_state("notifications/initialized", :initializing), do: :ready
+  defp notification_state(_, state), do: state
+
+  defp reply(message, params, context, state) do
+    result = dispatch(message["method"], params, context)
+    next = if message["method"] == "initialize" and state == :new, do: :initializing, else: state
+    {%{"jsonrpc" => "2.0", "id" => message["id"], "result" => result}, next}
+  rescue
+    error in ArgumentError ->
+      {error(message["id"], -32_602, Exception.message(error)), state}
+
+    error ->
+      {error(message["id"], -32_603, safe_error(error, context.config)), state}
+  catch
+    {:rpc, code, reason} -> {error(message["id"], code, reason), state}
+  end
 
   def error(id, code, message),
     do: %{"jsonrpc" => "2.0", "id" => id, "error" => %{"code" => code, "message" => message}}
@@ -130,18 +130,7 @@ defmodule McpEx.Server do
       try do
         {sql, values, cache?} =
           Diagnostics.step(context, "validation_errors", fn ->
-            arguments = params["arguments"]
-            unless is_map(arguments), do: raise(ArgumentError, "arguments must be an object")
-
-            if Enum.any?(Map.keys(arguments), &(&1 not in ["sql", "params", "cache"])),
-              do: raise(ArgumentError, "Unknown tool argument")
-
-            values = Map.get(arguments, "params", [])
-            unless is_list(values), do: raise(ArgumentError, "params must be an array")
-            unless is_binary(arguments["sql"]), do: raise(ArgumentError, "sql must be a string")
-            cache? = Map.get(arguments, "cache", false)
-            unless is_boolean(cache?), do: raise(ArgumentError, "cache must be a boolean")
-            {arguments["sql"], values, cache?}
+            tool_arguments!(params["arguments"])
           end)
 
         policy =
@@ -210,12 +199,7 @@ defmodule McpEx.Server do
   end
 
   defp dispatch("resources/read", %{"uri" => uri}, context) when is_binary(uri) do
-    parsed = URI.parse(uri)
-
-    unless parsed.scheme == context.config.scheme and parsed.host == "tables" and
-             is_nil(parsed.query) and is_nil(parsed.fragment) and is_nil(parsed.userinfo) and
-             is_nil(parsed.port),
-           do: throw({:rpc, -32_002, "Unknown resource URI"})
+    parsed = resource_uri!(uri, context.config.scheme)
 
     payload =
       case parsed.path do
@@ -223,26 +207,7 @@ defmodule McpEx.Server do
           tables(context)
 
         path ->
-          parts = path |> String.trim_leading("/") |> String.split("/") |> Enum.map(&URI.decode/1)
-
-          {schema, table} =
-            case parts do
-              [schema, table] when schema != "" and table != "" ->
-                {schema, table}
-
-              [table] when table != "" and not is_nil(context.config.schema) ->
-                {context.config.schema, table}
-
-              _ ->
-                throw({:rpc, -32_002, "Use a schema-qualified table resource URI"})
-            end
-
-          unless Enum.any?(tables(context), &(&1["schema"] == schema and &1["name"] == table)),
-            do: throw({:rpc, -32_002, "Table resource does not exist or is not accessible"})
-
-          context.adapter.columns(context, schema, table)
-          |> rows()
-          |> Redact.filter_columns(context.config)
+          resource_columns(path, context)
       end
 
     %{
@@ -258,6 +223,54 @@ defmodule McpEx.Server do
 
   defp dispatch("resources/read", _, _), do: raise(ArgumentError, "uri must be a string")
   defp dispatch(_, _, _), do: throw({:rpc, -32_601, "Method not found"})
+
+  defp resource_columns(path, context) do
+    parts = path |> String.trim_leading("/") |> String.split("/") |> Enum.map(&URI.decode/1)
+
+    {schema, table} =
+      case parts do
+        [schema, table] when schema != "" and table != "" ->
+          {schema, table}
+
+        [table] when table != "" and not is_nil(context.config.schema) ->
+          {context.config.schema, table}
+
+        _ ->
+          throw({:rpc, -32_002, "Use a schema-qualified table resource URI"})
+      end
+
+    unless Enum.any?(tables(context), &(&1["schema"] == schema and &1["name"] == table)),
+      do: throw({:rpc, -32_002, "Table resource does not exist or is not accessible"})
+
+    context.adapter.columns(context, schema, table)
+    |> rows()
+    |> Redact.filter_columns(context.config)
+  end
+
+  defp tool_arguments!(arguments) do
+    unless is_map(arguments), do: raise(ArgumentError, "arguments must be an object")
+
+    if Enum.any?(Map.keys(arguments), &(&1 not in ["sql", "params", "cache"])),
+      do: raise(ArgumentError, "Unknown tool argument")
+
+    values = Map.get(arguments, "params", [])
+    unless is_list(values), do: raise(ArgumentError, "params must be an array")
+    unless is_binary(arguments["sql"]), do: raise(ArgumentError, "sql must be a string")
+    cache? = Map.get(arguments, "cache", false)
+    unless is_boolean(cache?), do: raise(ArgumentError, "cache must be a boolean")
+    {arguments["sql"], values, cache?}
+  end
+
+  defp resource_uri!(uri, scheme) do
+    parsed = URI.parse(uri)
+
+    unless parsed.scheme == scheme and parsed.host == "tables" and
+             is_nil(parsed.query) and is_nil(parsed.fragment) and is_nil(parsed.userinfo) and
+             is_nil(parsed.port),
+           do: throw({:rpc, -32_002, "Unknown resource URI"})
+
+    parsed
+  end
 
   defp query_payload(context, sql, values, policy) do
     Diagnostics.count(context, "queries_" <> to_string(policy.mode))

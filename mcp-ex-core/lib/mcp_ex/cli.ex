@@ -20,7 +20,7 @@ defmodule McpEx.CLI do
     error -> startup_error(error)
   end
 
-  defp serve(args, adapter) do
+  defp options!(args) do
     {opts, rest, invalid} =
       OptionParser.parse(args,
         strict: [stdio: :boolean, http: :boolean, host: :string, port: :integer]
@@ -31,24 +31,34 @@ defmodule McpEx.CLI do
 
     if opts[:stdio] && opts[:http], do: raise(ArgumentError, "Choose one transport")
 
+    opts
+  end
+
+  defp configuration(args, dialect) do
+    opts = options!(args)
+
     env =
       Enum.reduce([host: "HOST", port: "PORT"], System.get_env(), fn {option, name}, env ->
         if value = opts[option], do: Map.put(env, name, to_string(value)), else: env
       end)
 
-    config = McpEx.Config.load(adapter.dialect(), env)
+    config = McpEx.Config.load(dialect, env)
     remote = config.remote or opts[:http] == true
 
     if remote and (is_nil(config.secret) or config.secret == ""),
       do: raise(ArgumentError, "REMOTE_SECRET_KEY is required in HTTP mode")
 
+    transport = if remote and opts[:stdio] != true, do: "http", else: "stdio"
+    {config, transport}
+  end
+
+  defp serve(args, adapter) do
+    {config, transport} = configuration(args, adapter.dialect())
     context = McpEx.Runtime.context(config, adapter)
     {:ok, runtime} = McpEx.Runtime.start_link(context)
     probe_started = System.monotonic_time(:microsecond)
     McpEx.Server.execute!(context, "SELECT 1", [], :read)
     probe_ms = (System.monotonic_time(:microsecond) - probe_started) / 1000
-
-    transport = if remote and opts[:stdio] != true, do: "http", else: "stdio"
 
     diagnostics =
       McpEx.Diagnostics.start(context, transport: transport, initial_probe_ms: probe_ms)

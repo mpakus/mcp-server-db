@@ -35,8 +35,10 @@ defmodule McpEx.Monitor do
     with {:ok, snapshots} <- Diagnostics.snapshots(directory, instance) do
       instances =
         snapshots
-        |> Enum.filter(&(&1["database"]["dialect"] == to_string(dialect)))
-        |> Enum.filter(&(is_nil(instance) or &1["instance_id"] == instance))
+        |> Enum.filter(
+          &(&1["database"]["dialect"] == to_string(dialect) and
+              (is_nil(instance) or &1["instance_id"] == instance))
+        )
         |> Enum.sort_by(& &1["instance_id"])
         |> Enum.map(&describe(&1, now))
 
@@ -51,14 +53,7 @@ defmodule McpEx.Monitor do
       do: raise(ArgumentError, "Several instances found; select resources --instance ID")
 
     instances = Enum.map(instances, &rate(&1, previous))
-    json = opts[:json] == true
-    if opts[:watch] == true and not json and terminal?(), do: IO.write("\e[H\e[2J")
-
-    if json do
-      IO.puts(Jason.encode!(%{"schema_version" => 1, "instances" => instances}))
-    else
-      IO.puts(render(command, instances))
-    end
+    print(command, instances, opts)
 
     if opts[:watch] do
       Process.sleep(2000)
@@ -68,11 +63,22 @@ defmodule McpEx.Monitor do
     end
   end
 
+  defp print(command, instances, opts) do
+    json = opts[:json] == true
+    if opts[:watch] == true and not json and terminal?(), do: IO.write("\e[H\e[2J")
+
+    if json do
+      IO.puts(Jason.encode!(%{"schema_version" => 1, "instances" => instances}))
+    else
+      IO.puts(render(command, instances))
+    end
+  end
+
   defp describe(s, now) do
     age = age(now, s["updated_at"])
-    fresh = not is_nil(age) and age <= 10_000
+    fresh = fresh?(age, 10_000)
     health_age = age(now, s["health"]["checked_at"])
-    health_ok = s["health"]["status"] == "ok" and not is_nil(health_age) and health_age <= 90_000
+    health_ok = s["health"]["status"] == "ok" and fresh?(health_age, 90_000)
     pool_age = age(now, s["pool"]["checked_at"])
     resources_age = age(now, s["resources"]["sampled_at"])
 
@@ -101,6 +107,8 @@ defmodule McpEx.Monitor do
 
   defp age(now, then) when is_integer(then) and then <= now, do: now - then
   defp age(_, _), do: nil
+
+  defp fresh?(age, maximum), do: not is_nil(age) and age <= maximum
 
   defp rate(s, previous) do
     old = previous[s["instance_id"]]

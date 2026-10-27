@@ -13,9 +13,10 @@ for project in mcp-ex-core mcp-ex-mysql mcp-ex-pg; do
     cd "$project_root/$project"
     run mix format --check-formatted
     run mix compile --warnings-as-errors
+    run mix credo --strict
     run mix test
     if [ "$project" != mcp-ex-core ]; then
-      run mix escript.build
+      run env MIX_ENV=prod mix escript.build
     fi
   )
 done

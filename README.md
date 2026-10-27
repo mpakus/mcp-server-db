@@ -4,11 +4,10 @@ Connect an MCP client to MySQL or PostgreSQL through SQL tools and table metadat
 resources. Both servers are written in Elixir, run over stdio or authenticated
 HTTP, with a supervised Elixir process per MCP session. Writes are disabled by default.
 
-Status as of 2026-10-19: the three defects from the
-[completion audit](.worklog/audit-2026-10-19.md) are fixed, runtime security
-dependencies are patched, and the full check and Hex audits pass. Both escripts now include an optional
-[browser and CLI dashboard](docs/DASHBOARD.md). See the
-[fix log](.worklog/fixes-2026-10-19.md) for regression evidence and verification limits.
+Version `0.2.0` adds an optional [browser dashboard](docs/DASHBOARD.md),
+configurable `HOST`/`PORT` and startup URLs, updated dependencies, and strict
+Credo checks. Both applications and their MCP server-info responses use this
+version. See [testing](docs/TESTING.md) for validation commands and coverage.
 
 2026-10-20: both transports now use supervised MCP session processes and bounded
 query workers. Stdio input is buffered and pings remain responsive during SQL.
@@ -22,8 +21,8 @@ See the [session implementation and measurements](.worklog/session-implementatio
 
 The adjacent [mcp-server-mysql](mcp-server-mysql/README.md) is the TypeScript
 reference implementation. Keep the three Elixir folders together: both
-applications depend on `../mcp-ex-core`. Plug and Bandit serve HTTP; there is no
-web UI or Phoenix application.
+applications depend on `../mcp-ex-core`. Plug and Bandit serve MCP HTTP and the
+browser dashboard; no Phoenix application is required.
 
 ## Documentation
 
