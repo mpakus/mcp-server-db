@@ -71,7 +71,7 @@ defmodule McpEx.SessionTest do
   test "lifecycle, negotiated version and independent request IDs", %{context: context} do
     {:ok, _, pid} = Session.open(context)
     {:ok, encoded} = Session.request(pid, rpc("tools/list"))
-    assert Jason.decode!(encoded)["error"]["code"] == -32000
+    assert Jason.decode!(encoded)["error"]["code"] == -32_000
     {:ok, _} = Session.request(pid, initialize())
     {:ok, encoded} = Session.request(pid, rpc("tools/list"))
     assert Jason.decode!(encoded)["error"]
@@ -101,7 +101,7 @@ defmodule McpEx.SessionTest do
     {:ok, pong} = Session.request(pid, rpc("ping", 2))
     assert Jason.decode!(pong)["result"] == %{}
     {:ok, duplicate} = Session.request(pid, query(1))
-    assert Jason.decode!(duplicate)["error"]["code"] == -32600
+    assert Jason.decode!(duplicate)["error"]["code"] == -32_600
     {:ok, busy} = Session.request(pid, query(3))
     assert Jason.decode!(busy)["error"]["message"] =~ "busy"
     send(worker, :release)
@@ -135,7 +135,7 @@ defmodule McpEx.SessionTest do
     assert_receive {:query_started, first, []}
     assert_receive {:query_started, second, []}
     {:ok, duplicate} = Session.request(pid, query(7))
-    assert Jason.decode!(duplicate)["error"]["code"] == -32600
+    assert Jason.decode!(duplicate)["error"]["code"] == -32_600
 
     send(first, :release)
     send(second, :release)

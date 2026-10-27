@@ -17,7 +17,7 @@ affected escript.
 | `.env` edits have no effect | Files are not loaded by the server | Export a trusted file or configure the client environment, then restart |
 | `... must be true or false` | Empty, uppercase, numeric or another invalid boolean | Use exact `true`/`false`, or unset it for the default |
 | `... must be an integer from 1 to ...` | Invalid port, pool size, timeout or request limit | Use the range in [Configuration](CONFIGURATION.md); zero is not an unlimited setting |
-| `MCP_HTTP_HOST must be an IP address` | A hostname such as `localhost` was supplied | Use `127.0.0.1`, `::1` or another literal bind address |
+| `HOST (or MCP_HTTP_HOST) must be localhost or an IP address` | An unsupported hostname or empty value was supplied | Use `localhost`, `127.0.0.1`, `::1` or another literal bind address |
 | `Use --stdio or --http` | Unknown server launch flag, including `--help` or `--version` | Use transport flags/environment settings; dashboard commands start with `status` or `resources` |
 | `Choose one transport` | Both flags were provided | Launch with only one transport flag |
 | Remote secret required during stdio startup | `IS_REMOTE_MCP=true` is inherited | Set it to `false`/unset it for local mode, or supply the required secret |

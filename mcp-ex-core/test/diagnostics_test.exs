@@ -17,7 +17,7 @@ end
 defmodule McpEx.DiagnosticsTest do
   use ExUnit.Case, async: false
   import ExUnit.CaptureIO
-  alias McpEx.{Config, Diagnostics, Monitor, Server}
+  alias McpEx.{Config, Dashboard, Diagnostics, HTTP, Monitor, Server}
 
   setup do
     dir = Path.join(System.tmp_dir!(), "mcp-dashboard-#{System.unique_integer([:positive])}")
@@ -85,6 +85,70 @@ defmodule McpEx.DiagnosticsTest do
 
     assert Diagnostics.directory(%{"XDG_STATE_HOME" => "/tmp/state"}) == "/tmp/state/mcp-ex"
     assert Diagnostics.count(context, "requests") == :ok
+  end
+
+  test "browser dashboard protects this instance's snapshot with a separate token", %{
+    context: context,
+    dir: dir
+  } do
+    ctx = context |> start() |> Map.put(:dashboard_token, "private-dashboard-token")
+    expected = snapshot(dir)
+    conn = Plug.Test.conn(:get, "/dashboard") |> HTTP.call(ctx)
+    assert conn.status == 200
+    assert conn.resp_body =~ "Server dashboard"
+    assert Plug.Conn.get_resp_header(conn, "cache-control") == ["no-store"]
+
+    assert Plug.Conn.get_resp_header(conn, "content-security-policy") |> hd() =~
+             "frame-ancestors 'none'"
+
+    refute conn.resp_body =~ "private-"
+    assert Dashboard.call(Plug.Test.conn(:get, "/dashboard/app.js"), ctx).status == 200
+
+    for token <- [nil, "private-token", "wrong-dashboard-token"] do
+      conn = Plug.Test.conn(:get, "/dashboard/data?token=private-dashboard-token")
+
+      conn =
+        if token,
+          do: Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> token),
+          else: conn
+
+      assert HTTP.call(conn, ctx).status == 401
+    end
+
+    # An unrelated instance's corrupt file must not break this dashboard or be exposed.
+    File.write!(Path.join(dir, String.duplicate("f", 24) <> ".json"), "unrelated")
+
+    conn =
+      Plug.Test.conn(:get, "/dashboard/data")
+      |> Plug.Conn.put_req_header("authorization", "Bearer private-dashboard-token")
+      |> HTTP.call(ctx)
+
+    assert conn.status == 200
+    result = Jason.decode!(conn.resp_body)
+    assert result["instance_id"] == expected["instance_id"]
+    assert result["state"] == "healthy"
+
+    for secret <- ["private-password", "private-token", "private-dashboard-token"],
+        do: refute(conn.resp_body =~ secret)
+
+    conn =
+      Plug.Test.conn(:get, "/mcp")
+      |> Plug.Conn.put_req_header("authorization", "Bearer private-dashboard-token")
+
+    assert HTTP.call(conn, ctx).status == 401
+    assert Dashboard.call(conn, ctx).status == 404
+    assert Dashboard.call(Plug.Test.conn(:post, "/dashboard/data"), ctx).status == 405
+    assert Dashboard.call(Plug.Test.conn(:get, "/dashboard/unknown"), ctx).status == 404
+
+    disabled = Map.put(ctx, :diagnostics, nil)
+    assert HTTP.call(Plug.Test.conn(:get, "/dashboard"), disabled).status == 404
+
+    conn =
+      Plug.Test.conn(:get, "/dashboard/data")
+      |> Plug.Conn.put_req_header("authorization", "Bearer private-dashboard-token")
+
+    missing = %{ctx | diagnostics: %{ctx.diagnostics | instance_id: String.duplicate("0", 24)}}
+    assert HTTP.call(conn, missing).status == 503
   end
 
   test "cache hits remain tool calls but do not inflate database query counts", %{

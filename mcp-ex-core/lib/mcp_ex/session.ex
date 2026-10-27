@@ -93,7 +93,7 @@ defmodule McpEx.Session do
     response =
       case state.pending[ref] do
         nil -> nil
-        entry -> encode(Server.error(entry.id, -32603, "Request worker failed"), state)
+        entry -> encode(Server.error(entry.id, -32_603, "Request worker failed"), state)
       end
 
     {:noreply, complete(state, ref, response)}
@@ -106,7 +106,7 @@ defmodule McpEx.Session do
 
       entry ->
         Process.exit(entry.task.pid, :kill)
-        response = encode(Server.error(entry.id, -32000, "Request timed out"), state)
+        response = encode(Server.error(entry.id, -32_000, "Request timed out"), state)
         {:noreply, complete(state, ref, response)}
     end
   end
@@ -183,7 +183,7 @@ defmodule McpEx.Session do
       not is_nil(id) and is_map_key(state.request_refs, id) ->
         deliver(
           target,
-          {:ok, encode(Server.error(id, -32600, "Request id already active"), state)}
+          {:ok, encode(Server.error(id, -32_600, "Request id already active"), state)}
         )
 
         state
@@ -191,7 +191,7 @@ defmodule McpEx.Session do
       not is_nil(id) and message["method"] == "initialize" and state.phase != :new ->
         deliver(
           target,
-          {:ok, encode(Server.error(id, -32600, "Session already initialized"), state)}
+          {:ok, encode(Server.error(id, -32_600, "Session already initialized"), state)}
         )
 
         state
@@ -261,7 +261,7 @@ defmodule McpEx.Session do
   defp overloaded(message, target, state) do
     deliver(
       target,
-      {:ok, encode(Server.error(message["id"], -32000, "Server busy; retry later"), state)}
+      {:ok, encode(Server.error(message["id"], -32_000, "Server busy; retry later"), state)}
     )
 
     state

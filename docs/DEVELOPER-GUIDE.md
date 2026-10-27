@@ -147,9 +147,15 @@ details out of the core.
 | `columns(context, schema, table)` | Returns a driver result with canonical lowercase column aliases in ordinal order |
 
 The request-handler context is `%{pool: pool, adapter: adapter_module, config: config}`
-with optional `cache: cache_name_or_nil` and `diagnostics: %{pid: publisher, table: ets_table}`. Missing/disabled
+with optional `cache: cache_name_or_nil` and `diagnostics: %{pid: publisher, table: ets_table, instance_id: id}`. Missing/disabled
 diagnostics are no-ops. Sampling contexts deliberately omit credentials, HTTP
 tokens and the diagnostics handle.
+
+`McpEx.Dashboard` serves embedded HTML/JavaScript and one instance's snapshot
+through `Monitor.inspect_instances/3`. It uses a separate per-start viewing
+token, never the MCP bearer token. `McpEx.HTTP` routes `/dashboard` requests to
+it; stdio starts a dashboard-only Bandit listener when diagnostics are enabled.
+Browser requests do not execute SQL or increment MCP HTTP counters.
 Transport contexts additionally carry `registry`, `sessions` and `tasks`
 supervisor references. Session messages carry either a GenServer call recipient
 for HTTP or the stdio writer PID; the session tracks these by request ID and

@@ -29,7 +29,7 @@ defmodule McpEx.Stdio do
         case consume(data, chunks, size, context, session) do
           :oversize ->
             Diagnostics.count(context, "oversize_errors")
-            write(Server.encode(Server.error(nil, -32700, "Request too large"), :infinity))
+            write(Server.encode(Server.error(nil, -32_700, "Request too large"), :infinity))
             {:error, :oversize}
 
           {chunks, size} ->
@@ -83,7 +83,7 @@ defmodule McpEx.Stdio do
 
       _ ->
         Diagnostics.count(context, "parse_errors")
-        write(Server.encode(Server.error(nil, -32700, "Invalid JSON"), :infinity))
+        write(Server.encode(Server.error(nil, -32_700, "Invalid JSON"), :infinity))
     end
   end
 

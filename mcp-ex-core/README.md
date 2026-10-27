@@ -36,13 +36,13 @@ Booleans accept exactly `true` or `false`; invalid settings fail startup.
 | `PII_BLOCK_INTROSPECTION` | `false` | Block otherwise filterable SQL metadata too |
 | `IS_REMOTE_MCP` | `false` | Select HTTP transport |
 | `REMOTE_SECRET_KEY` | unset | Required for HTTP; exact bearer token |
-| `MCP_HTTP_HOST`, `PORT` | `127.0.0.1`, `3000` | HTTP bind IP and port |
+| `HOST`, `PORT` | `localhost`, `4000` | HTTP/dashboard bind host and port; `--host`/`--port` override them; `MCP_HTTP_HOST` remains a fallback |
 | `MCP_ALLOWED_ORIGINS` | empty | Comma-separated accepted Origins; Origin-bearing requests denied by default |
 | `MCP_CACHE_ENABLED` | `false` | Enable the per-process SQL result cache; reads still require `cache: true` |
 | `MCP_CACHE_TTL_MS` | `5000` | Fixed TTL in milliseconds, 1–2147483647, starting before SQL execution |
 | `MCP_CACHE_MAX_ENTRIES` | `1000` | Maximum cached payloads, 1–100000 |
 | `MCP_CACHE_MAX_ENTRY_BYTES` | `65536` | Maximum encoded payload bytes per entry, 1–8388608 |
-| `MCP_DASHBOARD` | `false` | Enable private local diagnostic snapshots |
+| `MCP_DASHBOARD` | `false` | Enable private diagnostic snapshots and the browser dashboard |
 | `MCP_DASHBOARD_DIR` | XDG state directory or `~/.local/state/mcp-ex` | Same private directory for publisher and viewer |
 | `MCP_MAX_REQUEST_BYTES` | `1048576` | Maximum SQL/message input bytes |
 | `MCP_MAX_RESPONSE_BYTES` | `8388608` | Encoded response cap; oversized results become RPC errors |
@@ -158,7 +158,9 @@ shapes and HTTP boundaries without a database. [License](../LICENSE).
 and private atomic snapshots. `McpEx.Monitor` provides status/resources, JSON and
 watch views. The escript dispatches viewer commands before database configuration
 or pool startup. The adapter supplies `pool_metrics(context)` through
-DBConnection. No dashboard dependencies, new connections or listener are added.
+DBConnection. The browser dashboard reuses these snapshots and Bandit, with a
+separate per-start viewing token. HTTP shares its listener; stdio adds a
+dashboard-only listener. It adds no dependency or database connection.
 See [developer contracts](../docs/DEVELOPER-GUIDE.md#dashboard-implementation)
 and [operator instructions](../docs/DASHBOARD.md).
 

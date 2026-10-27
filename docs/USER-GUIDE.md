@@ -133,8 +133,12 @@ inherit your shell's asdf setup. For a wrapper that selects the pinned runtime
 from the workspace, see [process launch](OPERATIONS.md#process-launch-and-lifecycle).
 
 Without flags, transport defaults to stdio unless `IS_REMOTE_MCP=true`. Explicit
-`--stdio` chooses stdio; `--http` chooses HTTP. These transport flags cannot be combined. Settings, including database credentials,
-are environment variables. HTTP usage is in [Operations](OPERATIONS.md#run-http).
+`--stdio` chooses stdio; `--http` chooses HTTP. These transport flags cannot be combined.
+`--host` and `--port` override `HOST` and `PORT` (defaults: `localhost`, `4000`).
+Database credentials remain environment variables. HTTP startup prints the MCP
+URL to stderr. With `MCP_DASHBOARD=true`, either transport also prints a private
+[browser dashboard link](DASHBOARD.md#browser-dashboard). HTTP usage is in
+[Operations](OPERATIONS.md#run-http).
 
 ## Query tools
 

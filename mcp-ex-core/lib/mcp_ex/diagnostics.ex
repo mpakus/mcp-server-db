@@ -39,8 +39,12 @@ defmodule McpEx.Diagnostics do
            :ok <- prepare_directory(context.config.dashboard_dir, uid) do
         table = :ets.new(__MODULE__, [:set, :public, write_concurrency: true])
         :ets.insert(table, Enum.map(@keys, &{&1, 0}))
-        {:ok, pid} = GenServer.start(__MODULE__, {context, table, self(), uid, opts})
-        %{pid: pid, table: table}
+        id = Base.encode16(:crypto.strong_rand_bytes(12), case: :lower)
+
+        {:ok, pid} =
+          GenServer.start(__MODULE__, {context, table, self(), uid, Keyword.put(opts, :id, id)})
+
+        %{pid: pid, table: table, instance_id: id}
       else
         _ ->
           IO.puts(
@@ -145,7 +149,7 @@ defmodule McpEx.Diagnostics do
     Process.flag(:trap_exit, true)
     Process.monitor(owner)
     config = context.config
-    id = Base.encode16(:crypto.strong_rand_bytes(12), case: :lower)
+    id = Keyword.fetch!(opts, :id)
     now = System.system_time(:millisecond)
     # Keep credentials and bearer tokens out of the collector and its crash reports.
     sample_config =
@@ -427,7 +431,7 @@ defmodule McpEx.Diagnostics do
     end
   end
 
-  def snapshots(directory) do
+  def snapshots(directory, instance \\ nil) do
     with {:ok, uid} <- uid() do
       case File.lstat(directory) do
         {:error, :enoent} ->
@@ -437,6 +441,7 @@ defmodule McpEx.Diagnostics do
           with :ok <- private_directory(directory, uid), {:ok, names} <- File.ls(directory) do
             names
             |> Enum.filter(&Regex.match?(~r/^[a-f0-9]{24}\.json$/, &1))
+            |> Enum.filter(&(is_nil(instance) or &1 == instance <> ".json"))
             |> Enum.sort()
             |> Enum.reduce_while({:ok, []}, fn name, {:ok, acc} ->
               case read_snapshot(Path.join(directory, name), uid) do

@@ -4,10 +4,14 @@ defmodule McpEx.Mysql.MixProject do
   def project do
     [
       app: :mcp_ex_mysql,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.18",
       escript: [main_module: McpEx.Mysql.CLI, name: "mcp-ex-mysql", emu_args: "-noinput"],
-      deps: [{:mcp_ex_core, path: "../mcp-ex-core"}, {:myxql, "~> 0.9.0"}]
+      deps: [
+        {:mcp_ex_core, path: "../mcp-ex-core"},
+        {:myxql, "~> 0.9.0"},
+        {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false}
+      ]
     ]
   end
 

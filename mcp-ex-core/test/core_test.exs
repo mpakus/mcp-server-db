@@ -255,6 +255,10 @@ defmodule McpEx.CoreTest do
     for extra <- [
           %{"MYSQL_PORT" => "zero"},
           %{"MYSQL_PORT" => "65536"},
+          %{"PORT" => "0"},
+          %{"PORT" => "65536"},
+          %{"HOST" => "example.com"},
+          %{"HOST" => ""},
           %{"ALLOW_INSERT_OPERATION" => "yes"},
           %{"SCHEMA_INSERT_PERMISSIONS" => "app"},
           %{"MYSQL_SSL_CERT" => "missing"},
@@ -269,10 +273,24 @@ defmodule McpEx.CoreTest do
     assert cfg.schema == "example"
   end
 
+  test "HTTP defaults to localhost:4000 and accepts host and port overrides" do
+    cfg = config()
+    assert cfg.http_host == "localhost"
+    assert cfg.http_ip == {127, 0, 0, 1}
+    assert cfg.http_port == 4000
+
+    cfg = config(%{"HOST" => "::1", "PORT" => "4001", "MCP_HTTP_HOST" => "0.0.0.0"})
+    assert cfg.http_host == "::1"
+    assert cfg.http_ip == {0, 0, 0, 0, 0, 0, 0, 1}
+    assert cfg.http_port == 4001
+
+    assert config(%{"MCP_HTTP_HOST" => "0.0.0.0"}).http_ip == {0, 0, 0, 0}
+  end
+
   test "initialization, notifications, request ids and safe errors" do
     ctx = context()
     {response, :new} = Server.handle(request("tools/list"), ctx, :new)
-    assert response["error"]["code"] == -32000
+    assert response["error"]["code"] == -32_000
 
     {response, :initializing} =
       Server.handle(
@@ -320,7 +338,7 @@ defmodule McpEx.CoreTest do
           Map.put(request("ping"), "id", nil)
         ] do
       {response, _} = Server.handle(message, ctx)
-      assert response["error"]["code"] == -32600
+      assert response["error"]["code"] == -32_600
     end
   end
 
@@ -354,7 +372,7 @@ defmodule McpEx.CoreTest do
     {response, _} =
       Server.handle(request("resources/read", %{"uri" => "mysql://tables/missing/users"}), ctx)
 
-    assert response["error"]["code"] == -32002
+    assert response["error"]["code"] == -32_002
   end
 
   test "HTTP exact authentication, origin, protocol, request size and media types" do

@@ -5,6 +5,9 @@ defmodule McpEx.HTTP do
 
   def init(context), do: context
 
+  def call(%{path_info: ["dashboard" | _]} = conn, context),
+    do: McpEx.Dashboard.call(conn, context)
+
   def call(conn, context) do
     conn = do_call(conn, context)
     Diagnostics.count(context, "http." <> to_string(conn.status))
@@ -65,7 +68,7 @@ defmodule McpEx.HTTP do
 
             conn
             |> put_resp_content_type("application/json")
-            |> send_resp(400, Jason.encode!(Server.error(nil, -32700, "Invalid JSON")))
+            |> send_resp(400, Jason.encode!(Server.error(nil, -32_700, "Invalid JSON")))
         end
 
       {:more, _, conn} ->

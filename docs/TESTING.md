@@ -34,8 +34,8 @@ From the workspace root:
 
 Ensure `MCP_INTEGRATION` is unset or `false` for the default check. Both adapters'
 test helpers exclude tests tagged `:integration` unless that variable is exactly
-`true`. The current suite contains 47 core tests, one non-integration MySQL test
-and one non-integration PostgreSQL test: 49 executed tests in total, with two
+`true`. The current suite contains 49 core tests, one non-integration MySQL test
+and one non-integration PostgreSQL test: 51 executed tests in total, with two
 database tests excluded. Counts are a description of this checkout, not a
 substitute for checking the actual output.
 
@@ -67,8 +67,8 @@ the test Compose project even if a check fails:
 
 The database integration tests insert/delete fixture rows, create/drop test
 tables and exercise failure/rollback paths. Use the supplied disposable
-fixtures, never application databases. The current full run executes 47 core,
-2 MySQL and 2 PostgreSQL ExUnit tests (51 total), then the official MCP SDK
+fixtures, never application databases. The current full run executes 49 core,
+2 MySQL and 2 PostgreSQL ExUnit tests (53 total), then the official MCP SDK
 script over both stdio and HTTP, plus raw escript timeout/framing checks. It also
 rebuilds the escripts before SDK use.
 
@@ -102,7 +102,8 @@ These are public test credentials for the disposable local fixtures only.
 Both adapter tests can override their database port with
 `MCP_TEST_MYSQL_PORT` or `MCP_TEST_PG_PORT`. These overrides apply only to the
 Elixir tests. The JavaScript SDK script currently fixes database ports 13307 and
-15433 and HTTP ports 13007/13008 and cache-check ports 13027/13028; changing an
+15433, HTTP ports 13007/13008, stdio dashboard ports 13017/13018 and cache-check
+ports 13027/13028; changing an
 Elixir variable does not reconfigure it or Compose. Keep the supplied ports for
 the full suite.
 
@@ -166,6 +167,12 @@ done
 
 These checks use the current advisory registry and are separate from the normal
 offline-capable format/compile/test steps.
+
+The SDK runner also checks `--host`/`--port` precedence, invalid startup arguments,
+stderr URLs and JSON-only stdout. Browser dashboard checks cover both dialects
+and transports, packaged assets, token authentication, snapshot privacy and
+isolation from `/mcp`. The disposable dashboard demo prints browser links on
+ports 13017/13018 for visual verification.
 
 ## Coverage
 

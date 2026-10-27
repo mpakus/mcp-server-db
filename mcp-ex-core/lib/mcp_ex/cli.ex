@@ -21,13 +21,23 @@ defmodule McpEx.CLI do
   end
 
   defp serve(args, adapter) do
-    config = McpEx.Config.load(adapter.dialect())
-    remote = config.remote or "--http" in args
+    {opts, rest, invalid} =
+      OptionParser.parse(args,
+        strict: [stdio: :boolean, http: :boolean, host: :string, port: :integer]
+      )
 
-    if Enum.any?(args, &(&1 not in ["--stdio", "--http"])),
-      do: raise(ArgumentError, "Use --stdio or --http")
+    if rest != [] or invalid != [],
+      do: raise(ArgumentError, "Use [--stdio | --http] [--host HOST] [--port PORT]")
 
-    if "--stdio" in args and "--http" in args, do: raise(ArgumentError, "Choose one transport")
+    if opts[:stdio] && opts[:http], do: raise(ArgumentError, "Choose one transport")
+
+    env =
+      Enum.reduce([host: "HOST", port: "PORT"], System.get_env(), fn {option, name}, env ->
+        if value = opts[option], do: Map.put(env, name, to_string(value)), else: env
+      end)
+
+    config = McpEx.Config.load(adapter.dialect(), env)
+    remote = config.remote or opts[:http] == true
 
     if remote and (is_nil(config.secret) or config.secret == ""),
       do: raise(ArgumentError, "REMOTE_SECRET_KEY is required in HTTP mode")
@@ -38,21 +48,32 @@ defmodule McpEx.CLI do
     McpEx.Server.execute!(context, "SELECT 1", [], :read)
     probe_ms = (System.monotonic_time(:microsecond) - probe_started) / 1000
 
-    transport = if remote and "--stdio" not in args, do: "http", else: "stdio"
+    transport = if remote and opts[:stdio] != true, do: "http", else: "stdio"
 
     diagnostics =
       McpEx.Diagnostics.start(context, transport: transport, initial_probe_ms: probe_ms)
 
-    context = Map.put(context, :diagnostics, diagnostics)
+    context =
+      Map.merge(context, %{
+        diagnostics: diagnostics,
+        dashboard_token:
+          if(diagnostics, do: Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false))
+      })
 
     try do
-      if transport == "http" do
+      if transport == "http" or diagnostics != nil do
+        plug = if transport == "http", do: McpEx.HTTP, else: McpEx.Dashboard
+
         {:ok, _} =
           Supervisor.start_child(
             runtime,
-            {Bandit, plug: {McpEx.HTTP, context}, ip: config.http_ip, port: config.http_port}
+            {Bandit, plug: {plug, context}, ip: config.http_ip, port: config.http_port}
           )
+      end
 
+      startup_notice(context, transport)
+
+      if transport == "http" do
         Process.sleep(:infinity)
       else
         case McpEx.Stdio.run(context) do
@@ -64,6 +85,35 @@ defmodule McpEx.CLI do
       McpEx.Diagnostics.stop(diagnostics)
       Supervisor.stop(runtime)
     end
+  end
+
+  defp startup_notice(context, transport) do
+    config = context.config
+    host = if config.http_host in ["0.0.0.0", "::"], do: "localhost", else: config.http_host
+    base = %URI{scheme: "http", host: host, port: config.http_port}
+
+    endpoint =
+      if transport == "http",
+        do: URI.to_string(%{base | path: "/mcp"}),
+        else: "stdio"
+
+    dashboard =
+      cond do
+        context.diagnostics ->
+          URI.to_string(%{
+            base
+            | path: "/dashboard",
+              fragment: "token=" <> context.dashboard_token
+          })
+
+        config.dashboard ->
+          "unavailable (see startup warning)"
+
+        true ->
+          "disabled (enable with MCP_DASHBOARD=true)"
+      end
+
+    IO.puts(:stderr, "MCP: #{endpoint}\nDashboard: #{dashboard}")
   end
 
   defp startup_error(error) do

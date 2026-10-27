@@ -3,6 +3,39 @@ import { spawn } from "node:child_process";
 import { chmodSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
+export async function checkBrowserDashboard(target, transport, logs) {
+  const link = logs.match(/^Dashboard: (http:\/\/\S+)$/m)?.[1];
+  assert(link, "Missing browser dashboard startup link");
+  const url = new URL(link);
+  const token = new URLSearchParams(url.hash.slice(1)).get("token");
+  assert.equal(token.length, 43);
+  assert.notEqual(token, "interop-test-token");
+  const page = await fetch(url);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert(html.includes("Server dashboard"));
+  assert(!html.includes(token));
+  assert.equal(page.headers.get("cache-control"), "no-store");
+  const script = await fetch(new URL("/dashboard/app.js", url));
+  assert.equal(script.status, 200);
+  assert((await script.text()).includes("/dashboard/data"));
+  const dataUrl = new URL("/dashboard/data", url);
+  assert.equal((await fetch(dataUrl)).status, 401);
+  assert.equal((await fetch(dataUrl, { headers: { Authorization: "Bearer interop-test-token" } })).status, 401);
+  const response = await fetch(dataUrl, { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(response.status, 200);
+  const snapshot = await response.json();
+  assert.equal(snapshot.database.dialect, target.app);
+  assert.equal(snapshot.transport, transport);
+  assert.equal(snapshot.state, "healthy");
+  assert(snapshot.resources.items.length > 0);
+  for (const secret of [token, "mcp_test_password", "interop-test-token", "SELECT", "john@example.com"]) {
+    assert(!JSON.stringify(snapshot).includes(secret));
+  }
+  assert.equal((await fetch(new URL("/mcp", url), { headers: { Authorization: `Bearer ${token}` } })).status, transport === "stdio" ? 404 : 401);
+  console.log(`${target.app}: ${transport} browser dashboard authentication, privacy and startup link checks passed`);
+}
+
 async function run(executable, args, env) {
   const child = spawn(executable, args, { env, stdio: ["ignore", "pipe", "pipe"], timeout: 10000 });
   let stdout = "", stderr = "";

@@ -32,7 +32,7 @@ defmodule McpEx.Monitor do
         instance \\ nil,
         now \\ System.system_time(:millisecond)
       ) do
-    with {:ok, snapshots} <- Diagnostics.snapshots(directory) do
+    with {:ok, snapshots} <- Diagnostics.snapshots(directory, instance) do
       instances =
         snapshots
         |> Enum.filter(&(&1["database"]["dialect"] == to_string(dialect)))

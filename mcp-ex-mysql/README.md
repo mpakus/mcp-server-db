@@ -98,10 +98,10 @@ MySQL table DDL implicitly commits and cannot be rolled back.
 With database variables exported:
 
 ```sh
-REMOTE_SECRET_KEY=replace-with-a-long-secret PORT=3000 ./mcp-ex-mysql --http
+REMOTE_SECRET_KEY=replace-with-a-long-secret ./mcp-ex-mysql --http --host localhost --port 4000
 ```
 
-Endpoint: `http://127.0.0.1:3000/mcp`. Startup fails on connectivity errors.
+Endpoint: `http://localhost:4000/mcp`. Startup fails on connectivity errors.
 `mix test` excludes real database checks; start the parent's `compose.test.yml`
 and run `MCP_INTEGRATION=true mix test` for disposable fixtures on port 13307.
 See [root verification](../README.md) for official SDK stdio/HTTP checks.
@@ -109,6 +109,10 @@ See [root verification](../README.md) for official SDK stdio/HTTP checks.
 
 
 ## Dashboard
+
+With `MCP_DASHBOARD=true`, startup prints a private browser dashboard link to
+stderr. `HOST`/`PORT` default to `localhost:4000`; `--host`/`--port` override them.
+Stdio serves only the dashboard over HTTP; HTTP mode also prints the `/mcp` URL.
 
 Add `MCP_DASHBOARD=true` to the server environment and restart. From this
 application directory, run `./mcp-ex-mysql status --watch` in another terminal.

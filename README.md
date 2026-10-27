@@ -7,7 +7,7 @@ HTTP, with a supervised Elixir process per MCP session. Writes are disabled by d
 Status as of 2026-10-19: the three defects from the
 [completion audit](.worklog/audit-2026-10-19.md) are fixed, runtime security
 dependencies are patched, and the full check and Hex audits pass. Both escripts now include an optional
-[local CLI dashboard](docs/DASHBOARD.md). See the
+[browser and CLI dashboard](docs/DASHBOARD.md). See the
 [fix log](.worklog/fixes-2026-10-19.md) for regression evidence and verification limits.
 
 2026-10-20: both transports now use supervised MCP session processes and bounded
@@ -109,6 +109,18 @@ volatile functions. See [configuration and consistency limits](docs/CONFIGURATIO
 ## Server dashboard
 
 Add `MCP_DASHBOARD=true` to your MCP server's environment and restart it.
+
+Startup prints a private browser dashboard link to stderr. Both servers default
+to `HOST=localhost PORT=4000`; `--host` and `--port` override them. For example,
+with the existing database settings exported:
+
+```sh
+MCP_DASHBOARD=true ./mcp-ex-mysql/mcp-ex-mysql --stdio --host localhost --port 4000
+```
+
+Stdio exposes only the dashboard over HTTP. `--http` also prints the MCP URL
+at `/mcp`. Use separate ports for simultaneous servers. See
+[browser access and privacy](docs/DASHBOARD.md#browser-dashboard).
 In another terminal under the same account:
 
 ```sh
@@ -201,7 +213,7 @@ For real database and SDK checks, run from the workspace root:
 ```
 
 The fixtures use disposable tmpfs storage and loopback database ports
-13307 and 15433. SDK tests also need ports 13007/13008 and 13027/13028. Node and Docker are
+13307 and 15433. SDK tests also need ports 13007/13008, 13017/13018 and 13027/13028. Node and Docker are
 needed only for integration checks. Tests mutate fixtures; use the supplied test environment.
 [Testing instructions and coverage](docs/TESTING.md) explain the checks and
 remaining verification limits. `bin/check` uses RTK when available.

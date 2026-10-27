@@ -72,5 +72,6 @@ defmodule McpEx.Pg do
 end
 
 defmodule McpEx.Pg.CLI do
+  @moduledoc "PostgreSQL MCP escript entry point."
   def main(args), do: McpEx.CLI.main(args, McpEx.Pg)
 end

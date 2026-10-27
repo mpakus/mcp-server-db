@@ -22,14 +22,17 @@ try {
     const prefix = app === "mysql" ? "MYSQL" : "PG";
     const client = new Client({ name: "dashboard-fixture-demo", version: "1" });
     clients.push(client);
-    await client.connect(new StdioClientTransport({
+    const transport = new StdioClientTransport({
       command: fileURLToPath(new URL(`../mcp-ex-${app}/mcp-ex-${app}`, import.meta.url)),
       args: ["--stdio"], stderr: "pipe",
       env: { PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8",
         [`${prefix}_HOST`]: "127.0.0.1", [`${prefix}_PORT`]: app === "mysql" ? "13307" : "15433",
         [`${prefix}_USER`]: "mcp_test", [`${prefix}_PASS`]: "mcp_test_password", [`${prefix}_DB`]: "mcp_test",
+        HOST: "localhost", PORT: app === "mysql" ? "13017" : "13018",
         MCP_DASHBOARD: "true", MCP_DASHBOARD_DIR: directory, ENABLE_PII_REDACTION: "true" }
-    }));
+    });
+    transport.stderr.on("data", data => process.stderr.write(data));
+    await client.connect(transport);
     for (let i = 0; i < 8; i++) {
       await client.callTool({ name: `${app}_query`, arguments: { sql: "SELECT id, label FROM users LIMIT 1" } });
     }

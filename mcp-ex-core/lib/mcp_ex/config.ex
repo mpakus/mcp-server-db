@@ -26,6 +26,7 @@ defmodule McpEx.Config do
     connection = socket(connection, env, dialect)
     remote = boolean(env, "IS_REMOTE_MCP")
     secret = get(env, "REMOTE_SECRET_KEY")
+    http_host = get(env, "HOST", get(env, "MCP_HTTP_HOST", "localhost"))
 
     if remote and is_nil(secret),
       do: raise(ArgumentError, "REMOTE_SECRET_KEY is required in remote mode")
@@ -51,8 +52,9 @@ defmodule McpEx.Config do
       pii_block_introspection: boolean(env, "PII_BLOCK_INTROSPECTION"),
       remote: remote,
       secret: secret,
-      http_ip: ip(get(env, "MCP_HTTP_HOST", "127.0.0.1")),
-      http_port: number(env, "PORT", 3000, 65_535),
+      http_host: http_host,
+      http_ip: ip(http_host),
+      http_port: number(env, "PORT", 4000, 65_535),
       origins: csv(env, "MCP_ALLOWED_ORIGINS"),
       dashboard: boolean(env, "MCP_DASHBOARD"),
       dashboard_dir: McpEx.Diagnostics.directory(env),
@@ -149,10 +151,12 @@ defmodule McpEx.Config do
     |> Enum.map(&Regex.compile!(&1, "i"))
   end
 
+  defp ip("localhost"), do: {127, 0, 0, 1}
+
   defp ip(host) do
-    case :inet.parse_address(String.to_charlist(host)) do
+    case :inet.parse_address(String.to_charlist(host || "")) do
       {:ok, ip} -> ip
-      _ -> raise ArgumentError, "MCP_HTTP_HOST must be an IP address"
+      _ -> raise ArgumentError, "HOST (or MCP_HTTP_HOST) must be localhost or an IP address"
     end
   end
 

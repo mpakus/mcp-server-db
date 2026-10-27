@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkDashboard } from "./dashboard.mjs";
+import { checkDashboard, checkBrowserDashboard } from "./dashboard.mjs";
 import { checkSessionStdio, checkSessionHttp } from "./sessions.mjs";
 import { checkCache } from "./cache.mjs";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -19,8 +19,23 @@ const targets = [
     env: { PG_HOST: "127.0.0.1", PG_PORT: "15433", PG_USER: "mcp_test", PG_PASS: "mcp_test_password", PG_DB: "mcp_test" } },
 ];
 const dashboardDir = mkdtempSync(join(tmpdir(), "mcp-ex-sdk-"));
-const environment = target => ({ PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8", ...target.env, ENABLE_PII_REDACTION: "true", MCP_DASHBOARD: "true", MCP_DASHBOARD_DIR: dashboardDir });
+const environment = target => ({ PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8", ...target.env, HOST: "localhost", PORT: String(target.http + 10), ENABLE_PII_REDACTION: "true", MCP_DASHBOARD: "true", MCP_DASHBOARD_DIR: dashboardDir });
 const executable = target => fileURLToPath(new URL(`../mcp-ex-${target.app}/mcp-ex-${target.app}`, import.meta.url));
+
+function checkStartupArgs(target) {
+  for (const args of [
+    ["--port", "zero"], ["--port", "0"], ["--port", "65536"],
+    ["--host", "example.com"], ["--host"], ["--unknown"], ["--http", "--stdio"],
+  ]) {
+    const result = spawnSync(executable(target), args, {
+      env: environment(target), encoding: "utf8", timeout: 10000,
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /Use |must be |Choose one transport/);
+    assert(!result.stderr.includes("MCP:"));
+  }
+}
 
 async function exercise(client, target) {
   const tools = await client.listTools();
@@ -68,6 +83,9 @@ async function checkStdioTimeout(target) {
     const { code, signal } = await closed;
     assert.equal(signal, null, stderr);
     assert.equal(code, 0, stderr);
+    assert.match(stderr, /^MCP: stdio$/m);
+    assert.match(stderr, /^Dashboard: http:\/\/localhost:\d+\/dashboard#token=[\w-]+$/m);
+    assert(!stderr.includes("/mcp"));
     const responses = stdout.trimEnd().split("\n").map(line => JSON.parse(line));
     assert.deepEqual(responses.map(response => response.id), [1, 3, 2]);
     assert.equal(responses[2].result.isError, true);
@@ -82,12 +100,16 @@ async function checkStdioTimeout(target) {
 
 try {
 for (const target of targets) {
+  checkStartupArgs(target);
   const client = new Client({ name: "mcp-ex-interop", version: "1.0.0" });
   const transport = new StdioClientTransport({ command: executable(target), args: ["--stdio"], env: environment(target), stderr: "pipe" });
+  let stdioLogs = "";
+  transport.stderr.on("data", chunk => { stdioLogs += chunk; });
   try {
     await client.connect(transport);
     await exercise(client, target);
     await checkDashboard(target, "stdio", dashboardDir, executable(target), environment(target), client);
+    await checkBrowserDashboard(target, "stdio", stdioLogs);
     console.log(`${target.app}: official SDK stdio checks passed`);
   } finally {
     await client.close();
@@ -96,8 +118,13 @@ for (const target of targets) {
   await checkStdioTimeout(target);
   await checkSessionStdio(target, executable(target), environment(target));
 
-  const process = spawn(executable(target), ["--http"], { env: { ...environment(target), REMOTE_SECRET_KEY: "interop-test-token", PORT: String(target.http) }, stdio: ["ignore", "pipe", "pipe"] });
+  const process = spawn(executable(target), ["--http", "--host", "127.0.0.1", "--port", String(target.http)], {
+    env: { ...environment(target), REMOTE_SECRET_KEY: "interop-test-token", HOST: "invalid", PORT: "0", MCP_HTTP_HOST: "invalid" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let logs = "";
+  let stdout = "";
+  process.stdout.on("data", chunk => { stdout += chunk; });
   process.stderr.on("data", chunk => { logs += chunk; });
   const url = new URL(`http://127.0.0.1:${target.http}/mcp`);
   const clients = [];
@@ -110,6 +137,10 @@ for (const target of targets) {
       await delay(100);
     }
     assert(ready, `HTTP server did not start: ${logs}`);
+    assert(logs.includes(`MCP: ${url.href}\n`), logs);
+    assert.match(logs, /^Dashboard: http:\/\/127\.0\.0\.1:\d+\/dashboard#token=[\w-]+$/m);
+    assert(!logs.includes("interop-test-token"));
+    assert.equal(stdout, "");
     // Independent transports must not collide when clients reuse request IDs.
     for (let i = 0; i < 4; i++) {
       const client = new Client({ name: `mcp-ex-http-${i}`, version: "1.0.0" });
@@ -123,6 +154,7 @@ for (const target of targets) {
     const badOrigin = await fetch(url, { headers: { Authorization: "Bearer interop-test-token", Origin: "https://evil.test" } });
     assert.equal(badOrigin.status, 403);
     await checkDashboard(target, "http", dashboardDir, executable(target), environment(target), clients[0]);
+    await checkBrowserDashboard(target, "http", logs);
     console.log(`${target.app}: official SDK HTTP checks passed with four concurrent clients`);
   } finally {
     await Promise.all(clients.map(client => client.close()));

@@ -2,5 +2,5 @@
   "private": true,
   "type": "module",
   "scripts": {"test": "node client.mjs"},
-  "devDependencies": {"@modelcontextprotocol/sdk": "^1.26.0"}
+  "devDependencies": {"@modelcontextprotocol/sdk": "^1.32.2"}
 }

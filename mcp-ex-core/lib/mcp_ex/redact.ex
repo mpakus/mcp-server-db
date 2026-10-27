@@ -16,15 +16,17 @@ defmodule McpEx.Redact do
   def filter_introspection(rows, config) do
     Enum.reject(rows, fn row ->
       value =
-        Enum.find_value(row, fn {key, value} ->
-          if String.downcase(key) in ["field", "column_name"], do: value
-        end)
+        Enum.find_value(row, &introspection_column/1)
 
       unless is_binary(value),
         do: raise(ArgumentError, "Cannot safely filter introspection; use MCP resources")
 
       column?(value, config)
     end)
+  end
+
+  defp introspection_column({key, value}) do
+    if String.downcase(key) in ["field", "column_name"], do: value
   end
 
   def apply(value, config), do: value |> normalize() |> walk(config, false)

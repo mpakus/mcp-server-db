@@ -51,19 +51,23 @@ defmodule McpEx.Cache do
   defp lookup(table, key) do
     case :ets.lookup(table, :generation) do
       [{:generation, generation, false}] ->
-        case :ets.lookup(table, {generation, key}) do
-          [{_, expires, payload}] ->
-            if expires > now(), do: {:hit, payload}, else: {:miss, generation}
-
-          _ ->
-            {:miss, generation}
-        end
+        lookup_payload(table, generation, key)
 
       _ ->
         :bypass
     end
   rescue
     ArgumentError -> :bypass
+  end
+
+  defp lookup_payload(table, generation, key) do
+    case :ets.lookup(table, {generation, key}) do
+      [{_, expires, payload}] ->
+        if expires > now(), do: {:hit, payload}, else: {:miss, generation}
+
+      _ ->
+        {:miss, generation}
+    end
   end
 
   defp call(table, message) do
@@ -85,13 +89,7 @@ defmodule McpEx.Cache do
   def handle_call({:put, generation, key, expires, payload}, _from, state) do
     if :ets.lookup(state.table, :generation) == [{:generation, generation, false}] and
          expires > now() and byte_size(payload) <= state.options.max_entry_bytes do
-      case :ets.lookup(state.table, {generation, key}) do
-        [{_, previous_expiry, _}] ->
-          if previous_expiry <= now(), do: :ets.delete(state.table, {generation, key})
-
-        [] ->
-          :ok
-      end
+      expire_key(state.table, {generation, key})
 
       if :ets.info(state.table, :size) > state.options.max_entries, do: sweep(state)
 
@@ -113,6 +111,16 @@ defmodule McpEx.Cache do
   def handle_call({:end_write, ref}, _from, state) do
     Process.demonitor(ref, [:flush])
     {:reply, :ok, end_write(state, ref)}
+  end
+
+  defp expire_key(table, key) do
+    case :ets.lookup(table, key) do
+      [{_, previous_expiry, _}] ->
+        if previous_expiry <= now(), do: :ets.delete(table, key)
+
+      [] ->
+        :ok
+    end
   end
 
   @impl true

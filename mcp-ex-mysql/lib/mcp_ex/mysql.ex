@@ -28,7 +28,7 @@ defmodule McpEx.Mysql do
             conn,
             fn tx ->
               result = MyXQL.query!(tx, sql, values, timeout: timeout)
-              if mode == :read, do: MyXQL.rollback(tx, {:read_result, result}), else: result
+              finish_query(tx, result, mode)
             end,
             timeout: timeout
           )
@@ -43,6 +43,9 @@ defmodule McpEx.Mysql do
   rescue
     error -> {:error, error}
   end
+
+  defp finish_query(tx, result, :read), do: MyXQL.rollback(tx, {:read_result, result})
+  defp finish_query(_, result, _), do: result
 
   def tables(context) do
     database = context.config.schema
@@ -79,5 +82,6 @@ defmodule McpEx.Mysql do
 end
 
 defmodule McpEx.Mysql.CLI do
+  @moduledoc "MySQL MCP escript entry point."
   def main(args), do: McpEx.CLI.main(args, McpEx.Mysql)
 end

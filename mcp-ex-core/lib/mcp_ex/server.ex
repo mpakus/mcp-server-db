@@ -4,7 +4,7 @@ defmodule McpEx.Server do
   @versions ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
   def versions, do: @versions
 
-  def info(config), do: %{"name" => "mcp-ex-#{config.dialect}", "version" => "0.1.0"}
+  def info(config), do: %{"name" => "mcp-ex-#{config.dialect}", "version" => "0.2.0"}
 
   def handle(message, context, state \\ :ready),
     do: Diagnostics.rpc(context, message, fn -> do_handle(message, context, state) end)
@@ -15,7 +15,7 @@ defmodule McpEx.Server do
 
     cond do
       not is_map(params) ->
-        {error(Map.get(message, "id"), -32602, "params must be an object"), state}
+        {error(Map.get(message, "id"), -32_602, "params must be an object"), state}
 
       not Map.has_key?(message, "id") ->
         next =
@@ -26,10 +26,10 @@ defmodule McpEx.Server do
         {nil, next}
 
       not is_integer(message["id"]) and not is_binary(message["id"]) ->
-        {error(nil, -32600, "Invalid request id"), state}
+        {error(nil, -32_600, "Invalid request id"), state}
 
       state != :ready and method not in ["initialize", "ping"] ->
-        {error(message["id"], -32000, "Initialize the MCP connection first"), state}
+        {error(message["id"], -32_000, "Initialize the MCP connection first"), state}
 
       true ->
         try do
@@ -38,10 +38,10 @@ defmodule McpEx.Server do
           {%{"jsonrpc" => "2.0", "id" => message["id"], "result" => result}, next}
         rescue
           error in ArgumentError ->
-            {error(message["id"], -32602, Exception.message(error)), state}
+            {error(message["id"], -32_602, Exception.message(error)), state}
 
           error ->
-            {error(message["id"], -32603, safe_error(error, context.config)), state}
+            {error(message["id"], -32_603, safe_error(error, context.config)), state}
         catch
           {:rpc, code, reason} -> {error(message["id"], code, reason), state}
         end
@@ -51,7 +51,7 @@ defmodule McpEx.Server do
   defp do_handle(%{"jsonrpc" => "2.0", "id" => _} = message, _, state)
        when is_map_key(message, "result") or is_map_key(message, "error"), do: {nil, state}
 
-  defp do_handle(_, _, state), do: {error(nil, -32600, "Invalid JSON-RPC request"), state}
+  defp do_handle(_, _, state), do: {error(nil, -32_600, "Invalid JSON-RPC request"), state}
 
   def error(id, code, message),
     do: %{"jsonrpc" => "2.0", "id" => id, "error" => %{"code" => code, "message" => message}}
@@ -64,7 +64,7 @@ defmodule McpEx.Server do
     if IO.iodata_length(encoded) <= limit,
       do: IO.iodata_to_binary(encoded),
       else:
-        Jason.encode!(error(response["id"], -32000, "Response too large; use a smaller query"))
+        Jason.encode!(error(response["id"], -32_000, "Response too large; use a smaller query"))
   end
 
   defp dispatch("initialize", params, context) do
@@ -124,7 +124,7 @@ defmodule McpEx.Server do
   end
 
   defp dispatch("tools/call", params, context) do
-    unless params["name"] == context.config.tool, do: throw({:rpc, -32602, "Unknown tool"})
+    unless params["name"] == context.config.tool, do: throw({:rpc, -32_602, "Unknown tool"})
 
     Diagnostics.tool(context, fn ->
       try do
@@ -215,7 +215,7 @@ defmodule McpEx.Server do
     unless parsed.scheme == context.config.scheme and parsed.host == "tables" and
              is_nil(parsed.query) and is_nil(parsed.fragment) and is_nil(parsed.userinfo) and
              is_nil(parsed.port),
-           do: throw({:rpc, -32002, "Unknown resource URI"})
+           do: throw({:rpc, -32_002, "Unknown resource URI"})
 
     payload =
       case parsed.path do
@@ -234,11 +234,11 @@ defmodule McpEx.Server do
                 {context.config.schema, table}
 
               _ ->
-                throw({:rpc, -32002, "Use a schema-qualified table resource URI"})
+                throw({:rpc, -32_002, "Use a schema-qualified table resource URI"})
             end
 
           unless Enum.any?(tables(context), &(&1["schema"] == schema and &1["name"] == table)),
-            do: throw({:rpc, -32002, "Table resource does not exist or is not accessible"})
+            do: throw({:rpc, -32_002, "Table resource does not exist or is not accessible"})
 
           context.adapter.columns(context, schema, table)
           |> rows()
@@ -257,7 +257,7 @@ defmodule McpEx.Server do
   end
 
   defp dispatch("resources/read", _, _), do: raise(ArgumentError, "uri must be a string")
-  defp dispatch(_, _, _), do: throw({:rpc, -32601, "Method not found"})
+  defp dispatch(_, _, _), do: throw({:rpc, -32_601, "Method not found"})
 
   defp query_payload(context, sql, values, policy) do
     Diagnostics.count(context, "queries_" <> to_string(policy.mode))

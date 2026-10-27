@@ -1,10 +1,43 @@
 # Server dashboard
 
-Both escripts include a separate CLI dashboard: `status`, `resources`, and a
-refreshing `--watch` view. It shows server identity, uptime, database health,
+Both escripts include a browser dashboard and a separate CLI dashboard:
+`status`, `resources`, and a refreshing `--watch` view. They show server identity, uptime, database health,
 pool readiness/queue length, memory/process count, resources and aggregate
-request/query statistics. It reads local snapshots; it does not contact the
-server, open a new database pool, or require database credentials.
+request/query statistics. Both reuse private local snapshots without opening
+another database pool. The CLI reads files directly; the browser reads an
+authenticated endpoint on the running server.
+
+## Browser dashboard
+
+With the existing database settings exported:
+
+```sh
+MCP_DASHBOARD=true ./mcp-ex-mysql/mcp-ex-mysql --stdio --host localhost --port 4000
+```
+
+Startup prints `MCP: stdio` and a private link shaped like
+`http://localhost:4000/dashboard#token=...` to stderr. Open the full link in a
+browser. The page refreshes every two seconds and shows only that server's
+snapshot; it marks stale data or an unreachable server explicitly.
+
+`HOST` and `PORT` default to `localhost` and `4000`; the flags override them.
+`MCP_HTTP_HOST` remains a fallback when `HOST` is unset. In stdio mode the HTTP
+listener serves only the dashboard, and stdout stays JSON-RPC. In `--http` mode
+the same listener also serves `/mcp`, whose URL is printed after startup.
+Use separate ports when running multiple dashboard-enabled servers.
+
+The link contains a random, read-only viewing token that changes on restart.
+Treat it as private: it reveals operational metadata and resource names. It is
+separate from `REMOTE_SECRET_KEY` and cannot authorize MCP requests. The token
+stays in the URL fragment; the page sends it in an Authorization header when
+fetching data. It is not embedded in the served HTML or diagnostic snapshots.
+No database password, SQL text, query result or MCP bearer token is displayed.
+Keep the default loopback binding for local use; use a trusted TLS proxy before
+exposing the HTTP listener to other machines.
+
+Dashboard collection remains opt-in. Without `MCP_DASHBOARD=true`, startup
+prints that the dashboard is disabled. If the configured port is occupied,
+choose another with `--port` before restarting.
 
 ## Enable and inspect
 
@@ -56,7 +89,7 @@ The viewer ignores database, HTTP-token and PII environment settings.
 
 This is a browser-rendered screenshot of actual `status` output, captured on
 2026-10-19 against disposable MySQL 8.4 and PostgreSQL 16 fixtures. The presentation
-frame is for documentation; the application ships the CLI. The
+frame is for documentation and illustrates the CLI view. The
 [exact captured text](images/dashboard-output.txt) is also available.
 
 Each server completed eight reads and rejected two policy checks. That produces
@@ -153,7 +186,9 @@ invalid storage exits with code 2. Ctrl+C/signal termination has the OS exit sta
 
 ## Storage, privacy and lifecycle
 
-Diagnostics default to disabled and add no runtime dependency or listener.
+Diagnostics default to disabled and add no runtime dependency. When enabled,
+the browser view shares the HTTP listener or starts a dashboard-only listener
+for stdio. The CLI viewer itself starts no listener.
 On Unix systems the server obtains the effective UID through `/usr/bin/id -u`,
 creates a missing snapshot directory with mode `0700`, and atomically replaces
 per-instance JSON files with mode `0600`. Existing directories must already be
@@ -173,6 +208,6 @@ Normal stdio EOF removes the current instance file on a best-effort basis. A
 crash, forced kill or HTTP VM shutdown may leave a file. Stale files are retained
 for inspection, not auto-pruned. Remove a specific stale `INSTANCE_ID.json` only
 after verifying that its server is stopped; each restart has a new identity.
-There is no persistent history, raw-keyboard TUI, remote dashboard, p95 histogram,
+There is no persistent history, raw-keyboard TUI, p95 histogram,
 active-client count or process-control command. The implementation design is in
 [the developer guide](DEVELOPER-GUIDE.md#dashboard-implementation).

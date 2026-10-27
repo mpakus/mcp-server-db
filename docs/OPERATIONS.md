@@ -40,26 +40,33 @@ may interrupt requests, and no custom drain protocol is implemented.
 Export the chosen database settings first. For MySQL:
 
 ```sh
-REMOTE_SECRET_KEY=replace-with-a-long-secret MCP_HTTP_HOST=127.0.0.1 PORT=3000 \
+REMOTE_SECRET_KEY=replace-with-a-long-secret HOST=localhost PORT=4000 \
   ./mcp-ex-mysql/mcp-ex-mysql --http
 ```
 
 For PostgreSQL:
 
 ```sh
-REMOTE_SECRET_KEY=replace-with-a-long-secret MCP_HTTP_HOST=127.0.0.1 PORT=3001 \
+REMOTE_SECRET_KEY=replace-with-a-long-secret HOST=localhost PORT=4001 \
   ./mcp-ex-pg/mcp-ex-pg --http
 ```
 
 Replace the token; these example tokens are placeholders. `IS_REMOTE_MCP=true`
 selects the same transport without a flag. Both applications otherwise default
-to port 3000, so use separate ports when running both. `MCP_HTTP_HOST` is a
-literal IP address, not a DNS hostname.
+to `localhost:4000`, so use separate ports when running both. `HOST` accepts
+`localhost` or a literal IP address; `MCP_HTTP_HOST` remains a fallback.
+The flags `--host localhost --port 4001` override the environment.
 
-The endpoint is `http://127.0.0.1:3000/mcp` or the selected port. It implements
+The endpoint is `http://localhost:4000/mcp` or the selected address. It implements
 MCP HTTP with JSON responses and in-memory sessions. Use a client that retains
 the `MCP-Session-Id` returned by initialization. GET SSE streams, resumability and
 OAuth discovery are not supplied.
+
+After the database probe and listener startup succeed, stderr shows the MCP URL
+and dashboard status. `MCP_DASHBOARD=true` enables the browser dashboard and prints
+its private link. In stdio mode this starts a dashboard-only listener; stdout
+still contains only JSON-RPC and `/mcp` is not exposed. See the
+[dashboard guide](DASHBOARD.md#browser-dashboard) for access and privacy details.
 
 ## HTTP request contract
 
@@ -79,7 +86,7 @@ when their JSON-RPC envelope or tool result contains an error.
 In another shell, set the actual endpoint and bearer token, then initialize:
 
 ```sh
-export MCP_ENDPOINT='http://127.0.0.1:3000/mcp'
+export MCP_ENDPOINT='http://localhost:4000/mcp'
 export REMOTE_SECRET_KEY='replace-with-the-running-server-token'
 curl --silent --show-error --include "$MCP_ENDPOINT" \
   -H "Authorization: Bearer $REMOTE_SECRET_KEY" \

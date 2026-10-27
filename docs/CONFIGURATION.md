@@ -159,8 +159,9 @@ export PII_EXTRA_COLUMN_PATTERNS='^billing_;national_id$'
 | --- | --- | --- |
 | `IS_REMOTE_MCP` | `false` | Select HTTP by default and require a remote secret |
 | `REMOTE_SECRET_KEY` | Unset | Exact static bearer token, required for HTTP |
-| `MCP_HTTP_HOST` | `127.0.0.1` | Literal IPv4 or IPv6 bind address; hostnames are rejected |
-| `PORT` | `3000` | HTTP listen port, 1–65535; applies to both applications |
+| `HOST` | `localhost` | HTTP/dashboard bind host: `localhost` (IPv4 loopback), or a literal IPv4/IPv6 address |
+| `MCP_HTTP_HOST` | Unset | Compatibility fallback when `HOST` is unset |
+| `PORT` | `4000` | HTTP/dashboard listen port, 1–65535; applies to both applications |
 | `MCP_ALLOWED_ORIGINS` | Empty | CSV of exact permitted Origin header values; no wildcards |
 | `MCP_MAX_REQUEST_BYTES` | `1048576` | Maximum HTTP body/stdio frame and independent SQL byte length check |
 | `MCP_MAX_RESPONSE_BYTES` | `8388608` | Maximum encoded response bytes; oversized results become a small RPC error |
@@ -174,6 +175,11 @@ export PII_EXTRA_COLUMN_PATTERNS='^billing_;national_id$'
 `IS_REMOTE_MCP=true` still requires the secret during configuration and CLI
 validation, even with `--stdio`. Remove that variable or set it to `false` for
 a normal local setup. Both flags together are invalid.
+
+`--host HOST` and `--port PORT` override these environment variables. For example,
+`--http --host localhost --port 4001` listens on loopback port 4001. With
+`MCP_DASHBOARD=true`, stdio also starts a dashboard-only HTTP listener at this
+address; it does not expose `/mcp`. Use different ports for simultaneous servers.
 
 Shared HTTP settings are parsed even for stdio, so an invalid HTTP bind
 address/port can also fail a stdio launch. HTTP accepts a missing Origin; if
@@ -252,7 +258,7 @@ write is rejected. Hits report `Cache lookup time`; other calls report
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `MCP_DASHBOARD` | `false` | Enable private local snapshots in the running server; exactly `true` or `false` |
+| `MCP_DASHBOARD` | `false` | Enable private snapshots and the browser dashboard in the running server; exactly `true` or `false` |
 | `MCP_DASHBOARD_DIR` | `$XDG_STATE_HOME/mcp-ex` or `~/.local/state/mcp-ex` | Snapshot directory, expanded to an absolute path; set identically for server and viewer |
 
 `XDG_STATE_HOME` is the standard operating-system directory override, not a
